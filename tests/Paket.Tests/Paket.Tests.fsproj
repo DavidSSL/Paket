@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -69,13 +69,19 @@
       <Paket>True</Paket>
       <Link>FsUnit.fs</Link>
     </Compile>
+    <Compile Include="AssemblyInfo.fs" />
     <Compile Include="TestHelpers.fs" />
     <Compile Include="SemVerSpecs.fs" />
     <Compile Include="ConfigFileSpecs.fs" />
     <Compile Include="NugetVersionRangeParserSpecs.fs" />
     <Compile Include="NugetVersionRangeSerializerSpecs.fs" />
+    <Compile Include="DependencySetSpecs.fs" />
     <Compile Include="BindingRedirect.fs" />
     <Compile Include="UtilsSpecs.fs" />
+    <Compile Include="TemplateFileParsing.fs" />
+    <Compile Include="NuspecWriterSpecs.fs" />
+    <Compile Include="PackageProcessSpecs.fs" />
+    <Compile Include="RemotePushUrlSpecs.fs" />
     <Content Include="Nuspec\FSharp.Data.nuspec">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -122,6 +128,9 @@
     <Content Include="NuGetOData\Fantomas.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="NuGetOData\Microsoft.AspNet.WebApi.Client.xml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="NuGetOData\Fleece.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -137,7 +146,7 @@
     <Content Include="NuGetOData\Rx-PlatformServices.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="NuGetOData\EasyNetQ.xml" >
+    <Content Include="NuGetOData\EasyNetQ.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="NuGetOData\NUnit.xml">
@@ -150,11 +159,14 @@
     <Content Include="NuGetConfig\PasswordConfig.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="NuGetConfig\ConfigWithDisabledFeed.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Compile Include="NuGetConfig\NuGetConfigSpecs.fs" />
     <Content Include="JSON-LD\Rx-PlatformServices.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Compile Include="JSON-LD\JSONLD.fs" />
+    <Compile Include="JSON-LD\JSONLDSpecs.fs" />
     <Compile Include="FilterVersionSpecs.fs" />
     <Compile Include="DependenciesFile\VersionRangeSpecs.fs" />
     <Compile Include="DependenciesFile\VersionRequirementSpecs.fs" />
@@ -185,6 +197,9 @@
     <None Include="ProjectFile\TestData\Project2.fsprojtest">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="ProjectFile\TestData\Project3.fsprojtest">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Include="ProjectFile\TestData\ProjectWithConditions.fsprojtest">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -197,7 +212,13 @@
     <None Include="ProjectFile\TestData\CustomFantomasNode.fsprojtest">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="ProjectFile\TestData\CustomPaketFantomasNode.fsprojtest">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Include="ProjectFile\TestData\NoCustomFantomasNode.fsprojtest">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="ProjectFile\TestData\MaintainsOrdering.fsprojtest">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <Compile Include="ProjectFile\ConditionSpecs.fs" />
@@ -208,6 +229,11 @@
     <Compile Include="InstallModel\FrameworkIdentifierSpecs.fs" />
     <Compile Include="InstallModel\ProcessingSpecs.fs" />
     <Compile Include="InstallModel\Xml\Fantomas.fs" />
+    <Compile Include="InstallModel\Xml\xunit.runner.fs" />
+    <Compile Include="InstallModel\Xml\StyleCop.MSBuild.fs" />
+    <Compile Include="InstallModel\Xml\SQLite.fs" />
+    <Compile Include="InstallModel\Xml\GitInfoPlanter.fs" />
+    <Compile Include="InstallModel\Xml\LibGit2Sharp.fs" />
     <Compile Include="InstallModel\Xml\Plossum.fs" />
     <Compile Include="InstallModel\Xml\System.Spatial.fs" />
     <Compile Include="InstallModel\Xml\FantomasLib.fs" />
@@ -219,6 +245,7 @@
     <Compile Include="InstallModel\Xml\ManualNodes.fs" />
     <Compile Include="InstallModel\Xml\FSharp.Data.SqlClient.fs" />
     <Compile Include="InstallModel\Xml\RxXaml.fs" />
+    <Compile Include="InstallModel\Xml\Microsoft.Bcl.Build.fs" />
     <Compile Include="InstallModel\Penalty\PenaltySpecs.fs" />
     <Compile Include="InstallModel\Penalty\FrameworkConditionsSpecs.fs" />
     <Compile Include="DependencyModel\ProjectDependencySpecs.fs" />
@@ -227,6 +254,7 @@
   <ItemGroup>
     <Reference Include="mscorlib" />
     <Reference Include="System" />
+    <Reference Include="System.Numerics" />
     <Reference Include="System.Security" />
     <Reference Include="System.Xml" />
     <ProjectReference Include="..\..\src\Paket.Core\Paket.Core.fsproj">

@@ -27,10 +27,10 @@
     <WarningLevel>3</WarningLevel>
     <DocumentationFile>
     </DocumentationFile>
-    <StartArguments>update -f</StartArguments>
+    <StartArguments>update</StartArguments>
     <StartAction>Project</StartAction>
     <StartProgram>paket.exe</StartProgram>
-    <StartWorkingDirectory>d:\code\paketkopie</StartWorkingDirectory>
+    <StartWorkingDirectory>D:\Appdev\officeprovider\</StartWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -41,8 +41,8 @@
     <WarningLevel>3</WarningLevel>
     <DocumentationFile>
     </DocumentationFile>
-    <StartArguments>update -f</StartArguments>
-    <StartWorkingDirectory>D:\code\paketkopie</StartWorkingDirectory>
+    <StartArguments>update -v</StartArguments>
+    <StartWorkingDirectory>D:\code\Paket09x</StartWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
@@ -62,7 +62,6 @@
   <Import Project="$(FSharpTargetsPath)" Condition="Exists('$(FSharpTargetsPath)')" />
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="HelpTexts.fs" />
     <Compile Include="Commands.fs" />
     <Compile Include="Program.fs" />
     <Content Include="App.config" />
@@ -92,7 +91,6 @@
   </Target>
   -->
   <Import Project="$(SolutionDir)\.paket\paket.targets" />
-  <Import Project="Paket.paket.targets" Condition="Exists('Paket.paket.targets')" />
   <Choose>
     <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.0' Or $(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3')">
       <ItemGroup>

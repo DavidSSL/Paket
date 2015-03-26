@@ -6,7 +6,7 @@ open System.IO
 open Paket.Domain
 open Paket.PackageResolver
 open System.Collections.Generic
-open Paket.Rop
+open Chessie.ErrorHandling
 
 let addPackagesFromReferenceFiles projects (dependenciesFile:DependenciesFile) =
     let lockFileName = DependenciesFile.FindLockfile dependenciesFile.FileName
@@ -26,39 +26,43 @@ let addPackagesFromReferenceFiles projects (dependenciesFile:DependenciesFile) =
 
         let diff =
             allReferencedPackages
-            |> Seq.filter (
-                NormalizedPackageName >>
-                  allExistingPackages.Contains >>
-                  not)
+            |> Seq.filter (fun p ->
+                NormalizedPackageName p.Name
+                |> allExistingPackages.Contains
+                |> not)
 
         if Seq.isEmpty diff then 
             dependenciesFile
         else
             let newDependenciesFile =
                 diff
-                |> Seq.fold (fun (dependenciesFile:DependenciesFile) dep -> dependenciesFile.AddAdditionionalPackage(dep,"")) dependenciesFile
+                |> Seq.fold (fun (dependenciesFile:DependenciesFile) dep -> 
+                    if dependenciesFile.HasPackage dep.Name then 
+                        dependenciesFile
+                    else
+                        dependenciesFile.AddAdditionalPackage(dep.Name,"",dep.Settings)) dependenciesFile
             newDependenciesFile.Save()
             newDependenciesFile
 
 let SelectiveUpdate(dependenciesFile:DependenciesFile, exclude, force) =
     let lockFileName = DependenciesFile.FindLockfile dependenciesFile.FileName
 
-    if not lockFileName.Exists then 
-        let resolution = dependenciesFile.Resolve(force)
-        LockFile.Create(lockFileName.FullName, dependenciesFile.Options, resolution.ResolvedPackages, resolution.ResolvedSourceFiles)
-    else
-        let oldLockFile = LockFile.LoadFrom(lockFileName.FullName)
-        let changedDependencies = DependencyChangeDetection.findChangesInDependenciesFile(dependenciesFile,oldLockFile)
+    let resolution =
+        if not lockFileName.Exists then 
+            dependenciesFile.Resolve(force)
+        else
+            let oldLockFile = LockFile.LoadFrom(lockFileName.FullName)
+            let changedDependencies = DependencyChangeDetection.findChangesInDependenciesFile(dependenciesFile,oldLockFile)
 
-        let changed =
-            match exclude with
-            | None -> changedDependencies
-            | Some package -> Set.add package changedDependencies
+            let changed =
+                match exclude with
+                | None -> changedDependencies
+                | Some package -> Set.add package changedDependencies
 
-        let dependenciesFile = DependencyChangeDetection.PinUnchangedDependencies dependenciesFile oldLockFile changed
+            let dependenciesFile = DependencyChangeDetection.PinUnchangedDependencies dependenciesFile oldLockFile changed
 
-        let resolution = dependenciesFile.Resolve(force)
-        LockFile.Create(lockFileName.FullName, dependenciesFile.Options, resolution.ResolvedPackages, oldLockFile.SourceFiles)
+            dependenciesFile.Resolve(force)
+    LockFile.Create(lockFileName.FullName, dependenciesFile.Options, resolution.ResolvedPackages, resolution.ResolvedSourceFiles)
 
 /// Smart install command
 let SmartInstall(dependenciesFileName, exclude, force, hard, withBindingRedirects) = 

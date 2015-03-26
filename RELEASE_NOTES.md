@@ -1,10 +1,111 @@
-#### 0.24.3 - 23.01.2015
+#### 0.35.8 - 26.03.2015
+* BUGFIX: Maintain order of content file items - https://github.com/fsprojects/Paket/pull/722
+
+#### 0.35.7 - 24.03.2015
+* BUGFIX: `Convert-from-nuget` ignores disabled NuGet feeds - https://github.com/fsprojects/Paket/pull/720
+
+#### 0.35.6 - 22.03.2015
+* COSMETICS: better tracing of intermediate resolution conflicts
+
+#### 0.35.2 - 22.03.2015
+* SemVer allows "number + build metadata" format - https://github.com/fsprojects/Paket/issues/704
+
+#### 0.35.1 - 22.03.2015
+* `paket push` shows status information - https://github.com/fsprojects/Paket/pull/695
+
+#### 0.34.0 - 12.03.2015
+* `paket pack` pretty-prints it's nuspec - https://github.com/fsprojects/Paket/issues/691
+* Paket packs .MDBs docs into the nupkg - https://github.com/fsprojects/Paket/issues/693
+* paket pack / paket.template support wildcard patterns - https://github.com/fsprojects/Paket/issues/690
+* Allow empty lines in `paket.template` and report file name if parser fails - https://github.com/fsprojects/Paket/issues/692
+* BUGFIX: paket.template - file type respects dir without slash at the end - https://github.com/fsprojects/Paket/issues/698
+* BUGFIX: paket-files folder is alwaays relative to `paket.dependencies` - https://github.com/fsprojects/Paket/issues/564
+* BUGFIX: `paket install` respects manual paket nodes - https://github.com/fsprojects/Paket/issues/679
+
+#### 0.33.0 - 10.03.2015
+* Paket packs XML docs into the nupkg - https://github.com/fsprojects/Paket/issues/689
+* BUGFIX: Install settings from `paket.dependencies` should override package settings - https://github.com/fsprojects/Paket/issues/688
+
+#### 0.32.0 - 09.03.2015
+* PERFORMANCE: If resolver runs into conflict then use Warnsdorff's rule - https://github.com/fsprojects/Paket/pull/684
+* BUGFIX: Fixed Linux install scripts - https://github.com/fsprojects/Paket/pull/681
+* Support for WinExe output type - https://github.com/fsprojects/Paket/pull/675
+* BUGFIX: Fix Nuget compat issue with leading zeros - https://github.com/fsprojects/Paket/pull/672
+* BUGFIX: Detect inter project dependencies without matching package id - https://github.com/fsprojects/Paket/pull/671
+* BUGFIX: Parse prerelease numbers into bigint since ints might overflow - https://github.com/fsprojects/Paket/pull/667
+* BUGFIX: Optional fields in template files are read correctly - https://github.com/fsprojects/Paket/pull/666
+* BUGFIX: Better url and endpoint handling in `paket push` - https://github.com/fsprojects/Paket/pull/663
+* COSMETICS: Better tracing when resolver runs into conflict - https://github.com/fsprojects/Paket/pull/684
+* COSMETICS: Better error message when a package is listed twice in `paket.references` - https://github.com/fsprojects/Paket/pull/686
+* COSMETICS: Use Chessie for ROP - https://github.com/fsprojects/Chessie
+
+#### 0.31.2 - 26.02.2015
+* BUGFIX: Robust and much faster template file parser - https://github.com/fsprojects/Paket/pull/660
+
+#### 0.31.1 - 25.02.2015
+* Use latest FAKE tasks
+
+#### 0.31.0 - 25.02.2015
+* BUGFIX: Fix help for init command - https://github.com/fsprojects/Paket/pull/654
+* BUGFIX: Allow non-standard API endpoint for push - https://github.com/fsprojects/Paket/pull/652
+* BUGFIX: Special case nuget.org
+* BUGFIX: paket add/remove with just project name - https://github.com/fsprojects/Paket/pull/650
+* BUGFIX: Uploading packages as multiform content type - https://github.com/fsprojects/Paket/pull/651
+* BUGFIX: Handle transient dependencies better in pack command - https://github.com/fsprojects/Paket/pull/649
+* BUGFIX: Only load custom attributes if not given in TemplateFile or cmd parameter
+* BUGFIX: Detect .NET 4.5.1 - https://github.com/fsprojects/Paket/pull/647
+
+#### 0.30.0 - 23.02.2015
+* New command: `paket pack` - http://fsprojects.github.io/Paket/paket-pack.html
+* New command: `paket push` - http://fsprojects.github.io/Paket/paket-push.html
+* Improved command line help - https://github.com/fsprojects/Paket/pull/639
+* BUGFIX: fix no_auto_restore option parsing  - https://github.com/fsprojects/Paket/issues/632
+
+#### 0.29.0 - 18.02.2015
+* Allow local NuGet sources with spaces in `paket.dependencies` - https://github.com/fsprojects/Paket/issues/616
+* Streamlined install options in `paket.dependencies` and `paket.references` - https://github.com/fsprojects/Paket/issues/587
+* Allow to opt-out of targets import - https://github.com/fsprojects/Paket/issues/587
+* New option to add/remove packages for a single project - https://github.com/fsprojects/Paket/pull/610
+* BUGFIX: Blacklisted Microsoft.Bcl.Build.targets - https://github.com/fsprojects/Paket/issues/618
+* BUGFIX: Selective update doesn't add package twice from `paket.references` anymore
+* BUGFIX: `paket install` installs GitHub source files
+* COSMETICS: Respect home directories on mono - https://github.com/fsprojects/Paket/issues/612
+* COSMETICS: `paket add` inserts the new package in alphabetical position - https://github.com/fsprojects/Paket/issues/596
+
+#### 0.28.0 - 16.02.2015
+* Add a simple API which allows to retrieve NuGet v3 autocomplete
+* Allow unix-style comments in `paket.dependencies` file
+* BUGFIX: `paket restore` does not fail on missing `paket.version` files - https://github.com/fsprojects/Paket/issues/600
+* BUGFIX: Parsing of conditional dependencies should detect portable case - https://github.com/fsprojects/Paket/issues/594
+* BUGFIX: Prerelease requirements in `paket.dependencies` should override package dependencies - https://github.com/fsprojects/Paket/issues/607
+* BUGFIX: Try to ease the pain with mono bug in Process class - https://github.com/fsprojects/Paket/issues/599
+* BUGFIX: `paket restore` does not re-download http references - https://github.com/fsprojects/Paket/issues/592
+* BUGFIX: Make DeletePaketNodes more robust - https://github.com/fsprojects/Paket/issues/591
+* BUGFIX: Install content files on mono - https://github.com/fsprojects/Paket/issues/561
+* BUGFIX: Install process doesn't duplicate Imports of targets files any more - https://github.com/fsprojects/Paket/issues/588
+* BUGFIX: Don't remove comments from `paket.dependencies` file - https://github.com/fsprojects/Paket/issues/584
+* COSMETICS: Paket should not reformat app/web.config files while changing assembly redirects - https://github.com/fsprojects/Paket/issues/597
+
+#### 0.27.0 - 07.02.2015
+* Install process will reference `.props` and `.targets` files from NuGet packages - https://github.com/fsprojects/Paket/issues/516
+* Don't internalize in paket.exe during ILMerge
+* Allow to download from pre-authenticated MyGet feed - https://github.com/fsprojects/Paket/issues/466
+* BUGFIX: Fix `paket install --hard` for FSharp.Core - https://github.com/fsprojects/Paket/issues/579
+* BUGFIX: `paket convert-from-nuget` ignores casing when looking for nuget.targets - https://github.com/fsprojects/Paket/issues/580
+* BUGFIX: `paket install` correctly parses HTTP references - https://github.com/fsprojects/Paket/pull/571
+* BUGFIX: `paket.dependencies` parser now fails if tokens are not valid
+* COSMETICS: Prerelease strings are checked that they don't contain operators
+* COSMETICS: Create an install function in the API which takes a `paket.dependencies` file as text - https://github.com/fsprojects/Paket/issues/576
+
+#### 0.26.0 - 31.01.2015
+* Allow to opt-out of old frameworks in `paket.dependencies` - http://fsprojects.github.io/Paket/nuget-dependencies.html#Framework-restrictions
+* Allow `copy_local` settings in `paket.references` - http://fsprojects.github.io/Paket/references-files.html#copy_local-settings
+* COSMETICS: `paket.lock` beautification for HTTP specs - https://github.com/fsprojects/Paket/pull/571
+
+#### 0.25.0 - 25.01.2015
+* BUGFIX: If more than one TargetFramework-specific dependency to the same package exist, we take the latest one - https://github.com/fsprojects/Paket/pull/567
 * BUGFIX: Removes interactive-shell-check on `add auth` - https://github.com/fsprojects/Paket/pull/565
-
-#### 0.24.2 - 22.01.2015
 * BUGFIX: Can parse open NuGet ranges in brackets - https://github.com/fsprojects/Paket/issues/560
-
-#### 0.24.1 - 20.01.2015
 * BUGFIX: Detect `net35-client` - https://github.com/fsprojects/Paket/issues/559
 * BUGFIX: Show help for `auto-restore` command - https://github.com/fsprojects/Paket/pull/558
 

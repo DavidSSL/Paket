@@ -3,7 +3,7 @@ module Paket.FindOutdated
 
 open Paket.Domain
 open Paket.Logging
-open Paket.Rop
+open Chessie.ErrorHandling
 
 let private adjustVersionRequirements strict includingPrereleases (dependenciesFile: DependenciesFile) =
     //TODO: Anything we need to do for source files here?
@@ -17,11 +17,11 @@ let private adjustVersionRequirements strict includingPrereleases (dependenciesF
                 | true,false -> v, p.ResolverStrategy
                 | false,true -> 
                     match v with
-                    | VersionRequirement(v,_) -> VersionRequirement(v,PreReleaseStatus.All), Max
-                | false,false -> VersionRequirement.AllReleases, Max
+                    | VersionRequirement(v,_) -> VersionRequirement(v,PreReleaseStatus.All), ResolverStrategy.Max
+                | false,false -> VersionRequirement.AllReleases, ResolverStrategy.Max
             { p with VersionRequirement = requirement; ResolverStrategy = strategy})
 
-    DependenciesFile(dependenciesFile.FileName, dependenciesFile.Options, dependenciesFile.Sources, newPackages, dependenciesFile.RemoteFiles)
+    DependenciesFile(dependenciesFile.FileName, dependenciesFile.Options, dependenciesFile.Sources, newPackages, dependenciesFile.RemoteFiles, dependenciesFile.Comments)
 
 let private detectOutdated (oldResolution: PackageResolver.PackageResolution) (newResolution: PackageResolver.PackageResolution) =
     [for kv in oldResolution do
@@ -33,7 +33,7 @@ let private detectOutdated (oldResolution: PackageResolver.PackageResolution) (n
         | _ -> ()]
 
 /// Finds all outdated packages.
-let FindOutdated strict includingPrereleases environment = rop {
+let FindOutdated strict includingPrereleases environment = trial {
     let! lockFile = environment |> PaketEnv.ensureLockFileExists
 
     let dependenciesFile =
@@ -55,7 +55,7 @@ let private printOutdated packages =
             tracefn "  * %s %s -> %s" name (oldVersion.ToString()) (newVersion.ToString())
 
 /// Prints all outdated packages.
-let ShowOutdated strict includingPrereleases environment = rop {
+let ShowOutdated strict includingPrereleases environment = trial {
     let! allOutdated = FindOutdated strict includingPrereleases environment
     printOutdated allOutdated
 }

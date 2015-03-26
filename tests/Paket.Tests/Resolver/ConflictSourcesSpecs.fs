@@ -20,12 +20,12 @@ github fsprojects/FAKE:master test.fs
 let ``should resolve source files with correct sha``() =
     let name = PackageName "name"
     let dep =
-      { Requirements.PackageRequirement.Sources = []
-        Requirements.PackageRequirement.Name = name
-        Requirements.PackageRequirement.ResolverStrategy = Max
-        Requirements.PackageRequirement.Parent = Requirements.PackageRequirementSource.DependenciesFile ""
-        Requirements.PackageRequirement.FrameworkRestrictions = []
-        Requirements.PackageRequirement.VersionRequirement = VersionRequirement.NoRestriction }
+      { Sources = []
+        Name = name
+        ResolverStrategy = ResolverStrategy.Max
+        Parent = Requirements.PackageRequirementSource.DependenciesFile ""
+        Settings = InstallSettings.Default
+        VersionRequirement = VersionRequirement.NoRestriction }
     let sha = "sha1"
     let cfg = DependenciesFile.FromCode(config1)
     let resolved = ModuleResolver.Resolve((fun _ -> [dep]), (fun _ _ _ _ -> sha), cfg.RemoteFiles)
@@ -42,25 +42,21 @@ let config2 = """
 source "http://nuget.org/api/v2"
 
 github fsharp/fsharp:master foo.fs
-github fsharp/fsharp:fsharp4 bar.fs
+github fsharp/fsharp:fsharp4 foo.fs
 github fsprojects/FAKE:master test.fs
 github fsprojects/FAKE:vNext readme.md
 """
 
 let expectedError = """Found conflicting source file requirements:
-   - fsharp/fsharp
+   - fsharp/fsharpfoo.fs
      Versions:
      - master
      - fsharp4
-   - fsprojects/FAKE
-     Versions:
-     - master
-     - vNext
    Currently multiple versions for same source directory are not supported.
    Please adjust the dependencies file.""" |> normalizeLineEndings
 
 [<Test>]
-let ``should fail resolving source files from same repository but different versions``() =
+let ``should fail resolving same source files from same repository but different versions``() =
     try
         let cfg = DependenciesFile.FromCode(config2)
         ModuleResolver.Resolve(noGitHubConfigured, noGitHubConfigured, cfg.RemoteFiles) |> ignore

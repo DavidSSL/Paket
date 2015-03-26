@@ -23,12 +23,15 @@ let ``should generate Xml for Fantomas 1.5``() =
             [ @"..\Fantomas\lib\FantomasLib.dll" 
               @"..\Fantomas\lib\FSharp.Core.dll" 
               @"..\Fantomas\lib\Fantomas.exe" ],
+              [],
               Nuspec.Explicit ["FantomasLib.dll"])
     
-    let chooseNode = ProjectFile.Load("./ProjectFile/TestData/Empty.fsprojtest").Value.GenerateXml(model)
+    let propertyNodes,chooseNode,additionalNode = ProjectFile.Load("./ProjectFile/TestData/Empty.fsprojtest").Value.GenerateXml(model,true,true)
     chooseNode.OuterXml
     |> normalizeXml
     |> shouldEqual (normalizeXml expected)
+    
+    propertyNodes |> Seq.length |> shouldEqual 0
 
 
 let emptyDoc = """<?xml version="1.0" encoding="utf-8"?>
@@ -55,11 +58,12 @@ let ``should generate full Xml for Fantomas 1.5``() =
             [ @"..\Fantomas\lib\FantomasLib.dll" 
               @"..\Fantomas\lib\FSharp.Core.dll" 
               @"..\Fantomas\lib\Fantomas.exe" ],
+              [],
               Nuspec.Explicit ["FantomasLib.dll"])
     
     let project = ProjectFile.Load("./ProjectFile/TestData/Empty.fsprojtest").Value
     let completeModel = [NormalizedPackageName (PackageName "Fantomas"),model] |> Map.ofSeq
-    let used = [NormalizedPackageName (PackageName "fantoMas")] |> Set.ofSeq
+    let used = [NormalizedPackageName (PackageName "fantoMas"), PackageInstallSettings.Default("fantoMas")] |> Map.ofSeq
     project.UpdateReferences(completeModel,used,false)
     
     project.Document.OuterXml
@@ -74,11 +78,12 @@ let ``should not generate full Xml for Fantomas 1.5 if not referenced``() =
             [ @"..\Fantomas\lib\FantomasLib.dll" 
               @"..\Fantomas\lib\FSharp.Core.dll" 
               @"..\Fantomas\lib\Fantomas.exe" ],
+              [],
               Nuspec.Explicit ["FantomasLib.dll"])
     
     let project = ProjectFile.Load("./ProjectFile/TestData/Empty.fsprojtest").Value
     let completeModel = [NormalizedPackageName (PackageName "Fantomas"),model] |> Map.ofSeq
-    let used = [NormalizedPackageName (PackageName "blub")] |> Set.ofSeq
+    let used = [NormalizedPackageName (PackageName "blub"), PackageInstallSettings.Default("blub") ] |> Map.ofSeq
     project.UpdateReferences(completeModel,used,false)
     
     project.Document.OuterXml

@@ -4,32 +4,37 @@ module Paket.NuGetV3
 open Newtonsoft.Json
 open System.Collections.Generic
 
-type JSONResouce = 
+/// [omit]
+type JSONResource = 
     { Type : string;
       ID: string }
 
+/// [omit]
 type JSONVersionData = 
     { Data : string [] }
 
-let getJSONLDDetails (data : string) = JsonConvert.DeserializeObject<JSONVersionData>(data).Data
-
+/// [omit]
 type JSONRootData = 
-    { Resources : JSONResouce [] }
+    { Resources : JSONResource [] }
 
+/// [omit]
 let getSearchAutocompleteService (data : string) =  
     JsonConvert.DeserializeObject<JSONRootData>(data.Replace("@id","ID").Replace("@type","Type")).Resources
     |> Array.tryFind (fun x -> x.Type <> null && x.Type.ToLower() = "searchautocompleteservice")
     |> Option.map (fun x -> x.ID)
 
+/// [omit]
 let private searchDict = new System.Collections.Concurrent.ConcurrentDictionary<_,_>()
 
+/// Calculates the NuGet v3 URL from a NuGet v2 URL.
 let calculateNuGet3Path nugetUrl = 
     match nugetUrl with
     | "http://nuget.org/api/v2" -> Some "http://preview.nuget.org/ver3-preview/index.json"
     | "https://nuget.org/api/v2" -> Some "http://preview.nuget.org/ver3-preview/index.json"
     | _ -> None
 
-let getSeachAPI(auth,nugetUrl) = 
+/// [omit]
+let getSearchAPI(auth,nugetUrl) = 
     match searchDict.TryGetValue nugetUrl with
     | true,v -> v
     | _ ->
@@ -48,10 +53,34 @@ let getSeachAPI(auth,nugetUrl) =
         searchDict.[nugetUrl] <- result
         result
 
+/// [omit]
+let extractVersions(response:string) =
+    JsonConvert.DeserializeObject<JSONVersionData>(response).Data
 
-let getViaNuGet3(auth, nugetURL, package) =
+/// Uses the NuGet v3 autocomplete service to retrieve all package versions for the given package.
+let FindVersionsForPackage(auth, nugetURL, package) =
     async {
-        match getSeachAPI(auth,nugetURL) with        
-        | Some url -> return! safeGetFromUrl(auth,sprintf "%s?id=%s&take=10000" url package)
-        | None -> return None
+        match getSearchAPI(auth,nugetURL) with        
+        | Some url ->
+            let! response = safeGetFromUrl(auth,sprintf "%s?id=%s&take=10000" url package)
+            match response with
+            | Some text -> return extractVersions text
+            | None -> return [||]
+        | None -> return [||]
+    }
+
+/// [omit]
+let extractPackages(response:string) =
+    JsonConvert.DeserializeObject<JSONVersionData>(response).Data
+
+/// Uses the NuGet v3 autocomplete service to retrieve all packages with the given prefix.
+let FindPackages(auth, nugetURL, packageNamePrefix) =
+    async {
+        match getSearchAPI(auth,nugetURL) with
+        | Some url -> 
+            let! response = safeGetFromUrl(auth,sprintf "%s?q=%s&take=10000" url packageNamePrefix)
+            match response with
+            | Some text -> return extractPackages text
+            | None -> return [||]
+        | None -> return [||]
     }

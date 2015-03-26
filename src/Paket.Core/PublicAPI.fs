@@ -4,7 +4,7 @@ open System.IO
 open Paket.Logging
 open System
 open Paket.Domain
-open Paket.Rop
+open Chessie.ErrorHandling
 
 /// Paket API which is optimized for F# Interactive use.
 type Dependencies(dependenciesFileName: string) =
@@ -41,7 +41,7 @@ type Dependencies(dependenciesFileName: string) =
                    findInPath(parent, withError)
 
         let dependenciesFileName = findInPath(DirectoryInfo path,true)
-        tracefn "found: %s" dependenciesFileName
+        verbosefn "found: %s" dependenciesFileName
         Dependencies(dependenciesFileName)
 
     /// Initialize paket.dependencies file in current directory
@@ -114,12 +114,35 @@ type Dependencies(dependenciesFileName: string) =
         Utils.RunInLockedAccessMode(
             this.RootPath,
             fun () -> AddProcess.Add(dependenciesFileName, PackageName package, version, force, hard, interactive, installAfter))
+
+    /// Adds the given package with the given version to the dependencies file.
+    member this.AddToProject(package: string,version: string,force: bool,hard: bool,projectName: string,installAfter: bool): unit =
+        Utils.RunInLockedAccessMode(
+            this.RootPath,
+            fun () -> AddProcess.AddToProject(dependenciesFileName, PackageName package, version, force, hard, projectName, installAfter))
+      
+    /// Adds credentials for a Nuget feed
+    member this.AddCredentials(source: string, username: string) : unit =
+        Utils.RunInLockedAccessMode(
+            this.RootPath,
+            fun () -> ConfigFile.askAndAddAuth source username |> returnOrFail )
         
     /// Installs all dependencies.
     member this.Install(force: bool,hard: bool,withBindingRedirects:bool): unit = 
         Utils.RunInLockedAccessMode(
             this.RootPath,
             fun () -> UpdateProcess.SmartInstall(dependenciesFileName,None,force,hard,withBindingRedirects))
+
+    /// Creates a paket.dependencies file with the given text in the current directory and installs it.
+    static member Install(dependencies, ?path: string, ?force, ?hard, ?withBindingRedirects) = 
+        let path = defaultArg path Environment.CurrentDirectory
+        let fileName = Path.Combine(path, Constants.DependenciesFileName)
+        File.WriteAllText(fileName, dependencies)
+        let dependencies = Dependencies.Locate(path)
+        dependencies.Install(
+            force = defaultArg force false,
+            hard = defaultArg hard false,
+            withBindingRedirects = defaultArg withBindingRedirects false)
 
     /// Installs all dependencies.
     member this.Install(force: bool,hard: bool): unit = this.Install(force,hard,false)
@@ -182,7 +205,7 @@ type Dependencies(dependenciesFileName: string) =
 
     /// Returns the installed versions of all direct dependencies which are referneced in the references file
     member this.GetDirectDependencies(referencesFile:ReferencesFile): (string * string) list =
-        let normalizedDependecies = referencesFile.NugetPackages |> List.map NormalizedPackageName
+        let normalizedDependecies = referencesFile.NugetPackages |> List.map (fun p -> NormalizedPackageName p.Name)
         getLockFile().ResolvedPackages
         |> Seq.filter (fun kv -> normalizedDependecies |> Seq.exists ((=) kv.Key))
         |> listPackages
@@ -213,6 +236,12 @@ type Dependencies(dependenciesFileName: string) =
             this.RootPath,
             fun () -> RemoveProcess.Remove(dependenciesFileName, PackageName package, force, hard, interactive, installAfter))
 
+    /// Removes the given package from the specified project
+    member this.RemoveFromProject(package: string,force: bool,hard: bool,projectName: string,installAfter: bool): unit =
+        Utils.RunInLockedAccessMode(
+            this.RootPath,
+            fun () -> RemoveProcess.RemoveFromProject(dependenciesFileName, PackageName package, force, hard, projectName, installAfter))
+
     /// Shows all references for the given packages.
     member this.ShowReferencesFor(packages: string list): unit =
         FindReferences.ShowReferencesFor (packages |> List.map PackageName) |> this.Process
@@ -220,3 +249,17 @@ type Dependencies(dependenciesFileName: string) =
     /// Finds all references for a given package.
     member this.FindReferencesFor(package: string): string list =
         FindReferences.FindReferencesForPackage (PackageName package) |> this.Process
+
+    // Pack all paket.template files.
+    member this.Pack(outputPath, ?buildConfig, ?version, ?releaseNotes) = 
+        let dependenciesFile = DependenciesFile.ReadFromFile dependenciesFileName
+        PackageProcess.Pack(dependenciesFile, outputPath, buildConfig, version, releaseNotes)
+
+    // Push a nupkg file.
+    member this.Push(packageFileName, ?url, ?apiKey, (?endPoint: string), ?maxTrials) =
+        let urlWithEndpoint = RemoteUpload.GetUrlWithEndpoint url endPoint
+        let apiKey = defaultArg apiKey (Environment.GetEnvironmentVariable("nugetkey"))
+        if String.IsNullOrEmpty apiKey then
+            failwithf "Could not push package %s. Please specify an NuGet API key via environment variable \"nugetkey\"." packageFileName
+        let maxTrials = defaultArg maxTrials 5
+        RemoteUpload.Push maxTrials urlWithEndpoint apiKey packageFileName

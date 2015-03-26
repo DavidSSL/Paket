@@ -16,11 +16,23 @@ let inline addChild child (node:XmlElement) =
     node
 
 /// [omit]
+let inline hasAttribute name (node:XmlNode) =
+    if node = null || node.Attributes = null then false else
+    node.Attributes 
+    |> Seq.cast<XmlAttribute>
+    |> Seq.exists (fun a -> a.Name = name)
+
+/// [omit]
 let inline getAttribute name (node:XmlNode) =
+    if node = null || node.Attributes = null then None else
     node.Attributes 
     |> Seq.cast<XmlAttribute> 
-    |> Seq.tryFind (fun a -> a.Name = name) 
+    |> Seq.tryFind (fun a -> a.Name = name && a.Value <> null) 
     |> Option.map (fun a -> a.Value)
+
+/// [omit]
+let inline withAttributeValue attributeName valueText node =
+    getAttribute attributeName node = Some valueText
 
 /// [omit]
 let inline optGetAttribute name node = node |> Option.bind (getAttribute name)

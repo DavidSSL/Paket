@@ -31,8 +31,8 @@ let private rawFileUrl owner project branch fileName =
 let private rawGistFileUrl owner project fileName =
     sprintf "https://gist.githubusercontent.com/%s/%s/raw/%s" owner project fileName
 
-/// Gets a dependencies file from github.
-let downloadDependenciesFile(rootPath,remoteFile:ModuleResolver.ResolvedSourceFile) = async {
+/// Gets a dependencies file from the remote source and tries to parse it.
+let downloadDependenciesFile(rootPath,parserF,remoteFile:ModuleResolver.ResolvedSourceFile) = async {
     let fi = FileInfo(remoteFile.Name)
 
     let dependenciesFileName = remoteFile.Name.Replace(fi.Name,Constants.DependenciesFileName)
@@ -47,13 +47,13 @@ let downloadDependenciesFile(rootPath,remoteFile:ModuleResolver.ResolvedSourceFi
     let! result = safeGetFromUrl(None,url)
 
     match result with
-    | Some text ->
-        let destination = Path.Combine(rootPath, remoteFile.ComputeFilePath(dependenciesFileName))
+    | Some text when parserF text ->        
+        let destination = remoteFile.ComputeFilePath(rootPath,dependenciesFileName)
 
         Directory.CreateDirectory(destination |> Path.GetDirectoryName) |> ignore
         File.WriteAllText(destination, text)
         return text
-    | None -> return "" }
+    | _ -> return "" }
 
 
 let ExtractZip(fileName : string, targetFolder) = 
@@ -113,9 +113,12 @@ let downloadRemoteFiles(remoteFile:ResolvedSourceFile,destination) = async {
 
         let source = Path.Combine(projectPath, sprintf "%s-%s" remoteFile.Project remoteFile.Commit)
         DirectoryCopy(source,projectPath,true)        
-    | SingleSourceFileOrigin.GistLink, _ ->  return! downloadFromUrl(None,rawGistFileUrl remoteFile.Owner remoteFile.Project remoteFile.Name) destination
-    | SingleSourceFileOrigin.GitHubLink, _ -> return! downloadFromUrl(None,rawFileUrl remoteFile.Owner remoteFile.Project remoteFile.Commit remoteFile.Name) destination
-    | SingleSourceFileOrigin.HttpLink(url), _ ->
+    | SingleSourceFileOrigin.GistLink, _ -> 
+        return! downloadFromUrl(None,rawGistFileUrl remoteFile.Owner remoteFile.Project remoteFile.Name) destination
+    | SingleSourceFileOrigin.GitHubLink, _ ->
+        return! downloadFromUrl(None,rawFileUrl remoteFile.Owner remoteFile.Project remoteFile.Commit remoteFile.Name) destination
+    | SingleSourceFileOrigin.HttpLink(origin), _ ->
+        let url = origin + remoteFile.Commit
         do! downloadFromUrl(None, url) destination
         match Path.GetExtension(destination).ToLowerInvariant() with
         | ".zip" ->
@@ -127,7 +130,7 @@ let downloadRemoteFiles(remoteFile:ResolvedSourceFile,destination) = async {
 let DownloadSourceFiles(rootPath, sourceFiles:ModuleResolver.ResolvedSourceFile list) =
     sourceFiles
     |> Seq.map (fun source ->
-        let destination = Path.Combine(rootPath, source.FilePath)
+        let destination = source.FilePath(rootPath)
         let destinationDir = FileInfo(destination).Directory.FullName
 
         (destinationDir, source.Commit), (destination, source))
@@ -135,7 +138,7 @@ let DownloadSourceFiles(rootPath, sourceFiles:ModuleResolver.ResolvedSourceFile 
     |> Seq.sortBy (fst >> fst)
     |> Seq.map (fun ((destinationDir, version), sources) ->
         let versionFile = FileInfo(Path.Combine(destinationDir, Constants.PaketVersionFileName))
-        let isInRightVersion = versionFile.Exists && version = File.ReadAllText(versionFile.FullName)
+        let isInRightVersion = versionFile.Exists && File.ReadAllText(versionFile.FullName).Contains(version)
 
         if not isInRightVersion then
             CleanDir destinationDir
@@ -162,6 +165,10 @@ let DownloadSourceFiles(rootPath, sourceFiles:ModuleResolver.ResolvedSourceFile 
                     })
                 |> Async.Parallel
 
-            File.WriteAllText(versionFile.FullName, version)
+            if File.Exists(versionFile.FullName) then
+                if not <| File.ReadAllText(versionFile.FullName).Contains(version) then
+                    File.AppendAllLines(versionFile.FullName, [version])
+            else
+                File.AppendAllLines(versionFile.FullName, [version])
         })
     |> Async.Parallel

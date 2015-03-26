@@ -23,18 +23,19 @@ let ExtractPackage(root, sources, force, package : ResolvedPackage) =
                                | _ -> None)
             try 
                 let! folder = NuGetV2.DownloadPackage(root, auth, source.Url, name, v, force)
-                return package, NuGetV2.GetLibFiles folder
-            with _ when force = false -> 
+                return package, NuGetV2.GetLibFiles folder, NuGetV2.GetTargetsFiles folder
+            with _ when not force -> 
                 tracefn "Something went wrong with the download of %s %A - automatic retry with --force." name v
                 let! folder = NuGetV2.DownloadPackage(root, auth, source.Url, name, v, true)
-                return package, NuGetV2.GetLibFiles folder
-        | LocalNuget path -> 
+                return package, NuGetV2.GetLibFiles folder, NuGetV2.GetTargetsFiles folder
+        | LocalNuget path ->         
+            let path = Utils.normalizeLocalPath path
             let packageFile = Path.Combine(root, path, sprintf "%s.%A.nupkg" name v)
             let! folder = NuGetV2.CopyFromCache(root, packageFile, name, v, force)
-            return package, NuGetV2.GetLibFiles folder
+            return package, NuGetV2.GetLibFiles folder, NuGetV2.GetTargetsFiles folder
     }
 
-/// Retores the given packages from the lock file.
+/// Restores the given dependencies from the lock file.
 let internal restore(root, sources, force, lockFile:LockFile, packages:Set<NormalizedPackageName>) = 
     let sourceFileDownloads = RemoteDownload.DownloadSourceFiles(Path.GetDirectoryName lockFile.FileName, lockFile.SourceFiles)
 
@@ -66,7 +67,7 @@ let Restore(dependenciesFileName,force,referencesFileNames) =
             |> List.map (fun fileName ->
                 ReferencesFile.FromFile fileName
                 |> lockFile.GetPackageHull
-                |> Seq.map NormalizedPackageName)
+                |> Seq.map (fun p -> NormalizedPackageName p.Key))
             |> Seq.concat
 
     restore(root, sources, force, lockFile,Set.ofSeq packages) 

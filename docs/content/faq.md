@@ -10,7 +10,7 @@ Paket on the other hand maintains this information on a consistent and stable ba
 
 The [`paket outdated` command](paket-outdated.html) lists packages that have new versions available.
 
-Paket also enables one to [reference files directly from GitHub repositories](http-dependencies.html).
+Paket also enables one to reference files directly from [GitHub repositories, Gists](github-dependencies.html) and [HTTP](http-dependencies.html).
 
 <div id="no-version"></div>
 ## NuGet puts the package version into the path. Is Paket doing the same?
@@ -41,24 +41,31 @@ In fact our current model would not be able to work consistently alongside an `i
 
     [lang=batchfile]
     param($installPath, $toolsPath, $package, $project)
-    
+
     foreach ($fontFile in $project.ProjectItems.Item("fonts").ProjectItems)
     {
-        $fontFile.Properties.Item("BuildAction").Value = 2;        
+        $fontFile.Properties.Item("BuildAction").Value = 2;
     }
-    
+
 The reason is simply that even if we would support PowerShell on Windows we can't access the Visual Studio project system. Paket is a command line tool and doesn't run inside of Visual Studio.
-There is no reasonable way to make this work – and even NuGet.exe can't do it in command line mode. 
+There is no reasonable way to make this work – and even NuGet.exe can't do it in command line mode.
 
 Instead we encourage the .NET community to use a declarative install process and we will help to fix this in the affected packages.
 
 ## I'm already using NuGet. How can I convert to Paket?
 
-The process is very easy and you can read more about it in the [convert from NuGet](paket-convert-from-nuget.html) section.
+The process can be automated with [paket convert-from-nuget](paket-convert-from-nuget.html) command.
+
+In case of the command's failure, you can fallback to manual approach:
+
+1. Analyse your `packages.config` files and extract the referenced packages into a paket.dependencies file.
+2. Convert each `packages.config` file to a paket.references file. This is very easy - you just have to remove all the XML and keep the package names.
+3. Run [paket install](paket-install.html) with the `--hard` flag. This will analyze the dependencies, generate a paket.lock file, remove all the old package references from your project files and replace them with equivalent `Reference`s in a syntax that can be managed automatically by Paket.
+4. (Optional) Raise corresponding issue [here](https://github.com/fsprojects/Paket/issues) so that we can make the comand even better.
 
 ## Why should I commit the lock file?
 
-Committing the [`paket.lock` file](lock-file.html) to your version control system guarantees that other developers and/or build servers will always end up with a reliable and consistent set of packages regardless of where or when a [paket install](paket-install.html) occurs.
+Committing the [`paket.lock` file](lock-file.html) to your version control system guarantees that other developers and/or build servers will always end up with a reliable and consistent set of packages regardless of where or when [`paket install`](paket-install.html) is run.
 
 ## Does Paket allow groups like bundler does?
 

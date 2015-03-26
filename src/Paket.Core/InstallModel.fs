@@ -10,6 +10,7 @@ open Paket.Requirements
 [<RequireQualifiedAccess>]
 type Reference = 
     | Library of string
+    | TargetsFile of string
     | FrameworkAssemblyReference of string
 
     member this.LibName =
@@ -21,20 +22,24 @@ type Reference =
 
     member this.FrameworkReferenceName =
         match this with
-        | FrameworkAssemblyReference name -> Some name
+        | Reference.FrameworkAssemblyReference name -> Some name
         | _ -> None
 
     member this.ReferenceName =
         match this with
-        | FrameworkAssemblyReference name -> name
+        | Reference.FrameworkAssemblyReference name -> name
+        | Reference.TargetsFile targetsFile -> 
+            let fi = new FileInfo(normalizePath targetsFile)
+            fi.Name.Replace(fi.Extension, "")
         | Reference.Library lib -> 
             let fi = new FileInfo(normalizePath lib)
             fi.Name.Replace(fi.Extension, "")
 
     member this.Path =
         match this with
-        | Library path -> path
-        | FrameworkAssemblyReference path -> path
+        | Reference.Library path -> path
+        | Reference.TargetsFile path -> path
+        | Reference.FrameworkAssemblyReference path -> path
 
 type InstallFiles = 
     { References : Reference Set
@@ -49,6 +54,9 @@ type InstallFiles =
     member this.AddReference lib = 
         { this with References = Set.add (Reference.Library lib) this.References }
 
+    member this.AddTargetsFile targetsFile = 
+        { this with References = Set.add (Reference.TargetsFile targetsFile) this.References }
+
     member this.AddFrameworkAssemblyReference assemblyName = 
         { this with References = Set.add (Reference.FrameworkAssemblyReference assemblyName) this.References }
 
@@ -57,7 +65,7 @@ type InstallFiles =
         |> Set.map (fun r -> r.FrameworkReferenceName)
         |> Seq.choose id
 
-    member this.MergeWith(that:InstallFiles)= 
+    member this.MergeWith(that:InstallFiles) = 
         { this with 
             References = Set.union that.References this.References
             ContentFiles = Set.union that.ContentFiles this.ContentFiles }
@@ -68,7 +76,8 @@ type LibFolder =
       Files : InstallFiles}
 
     member this.GetSinglePlatforms() =
-        this.Targets |> List.choose (fun target ->
+        this.Targets 
+        |> List.choose (fun target ->
             match target with
             | SinglePlatform t -> Some t
             | _ -> None)
@@ -76,20 +85,17 @@ type LibFolder =
 type InstallModel = 
     { PackageName : PackageName
       PackageVersion : SemVerInfo
-      LibFolders : LibFolder list }
+      ReferenceFileFolders : LibFolder list
+      TargetsFileFolders : LibFolder list }
 
     static member EmptyModel(packageName, packageVersion) : InstallModel = 
         { PackageName = packageName
           PackageVersion = packageVersion
-          LibFolders = [] }
-   
-    member this.GetTargets() = 
-        this.LibFolders
-        |> List.map (fun folder -> folder.Targets)
-        |> List.concat
+          ReferenceFileFolders = []
+          TargetsFileFolders = [] }
     
-    member this.GetFiles(target : TargetProfile) = 
-        match Seq.tryFind (fun lib -> Seq.exists (fun t -> t = target) lib.Targets) this.LibFolders with
+    member this.GetLibReferences(target : TargetProfile) = 
+        match Seq.tryFind (fun lib -> Seq.exists (fun t -> t = target) lib.Targets) this.ReferenceFileFolders with
         | Some folder -> folder.Files.References
                          |> Set.map (fun x -> 
                                 match x with
@@ -97,41 +103,66 @@ type InstallModel =
                                 | _ -> None)
                          |> Seq.choose id
         | None -> Seq.empty
+
+    member this.GetTargetsFiles(target : TargetProfile) = 
+        match Seq.tryFind (fun lib -> Seq.exists (fun t -> t = target) lib.Targets) this.TargetsFileFolders with
+        | Some folder -> folder.Files.References
+                         |> Set.map (fun x -> 
+                                match x with
+                                | Reference.TargetsFile targetsFile -> Some targetsFile
+                                | _ -> None)
+                         |> Seq.choose id
+        | None -> Seq.empty
     
-    member this.AddLibFolders(libs : seq<string>) : InstallModel =
+    member this.AddLibReferences(libs : seq<string>, references) : InstallModel =
         let libFolders = 
             libs 
             |> Seq.map this.ExtractLibFolder
             |> Seq.choose id
             |> Seq.distinct 
             |> List.ofSeq
+            |> PlatformMatching.getSupportedTargetProfiles 
+            |> Seq.map (fun entry -> { Name = entry.Key; Targets = entry.Value; Files = InstallFiles.empty })
+            |> Seq.toList  
 
-        if libFolders.Length = 0 then this
-        else
-            let libFolders =
-                PlatformMatching.getSupportedTargetProfiles libFolders
-                |> Seq.map (fun entry -> { Name = entry.Key; Targets = entry.Value; Files = InstallFiles.empty })
-                |> Seq.toList
+        Seq.fold (fun (model:InstallModel) file ->
+                    match model.ExtractLibFolder file with
+                    | Some folderName -> 
+                        match Seq.tryFind (fun folder -> folder.Name = folderName) model.ReferenceFileFolders with
+                        | Some path -> model.AddPackageFile(path, file, references)
+                        | _ -> model
+                    | None -> model) { this with ReferenceFileFolders = libFolders } libs
 
-            { this with LibFolders = libFolders}
+    member this.AddTargetsFiles(targetsFiles : seq<string>) : InstallModel =
+        let targetsFileFolders = 
+            targetsFiles 
+            |> Seq.map this.ExtractBuildFolder
+            |> Seq.choose id
+            |> Seq.distinct 
+            |> List.ofSeq
+            |> PlatformMatching.getSupportedTargetProfiles 
+            |> Seq.map (fun entry -> { Name = entry.Key; Targets = entry.Value; Files = InstallFiles.empty })
+            |> Seq.toList            
+
+
+        Seq.fold (fun model file ->
+                    match model.ExtractBuildFolder file with
+                    | Some folderName -> 
+                        match Seq.tryFind (fun folder -> folder.Name = folderName) model.TargetsFileFolders with
+                        | Some path -> model.AddTargetsFile(path, file)
+                        | _ -> model
+                    | None -> model) { this with TargetsFileFolders = targetsFileFolders } targetsFiles
     
-    member this.ExtractLibFolder(path : string) : string option=
-        let path = path.Replace("\\", "/").ToLower()
-        let fi = new FileInfo(path)
+    member this.ExtractLibFolder path = Utils.extractPath "lib" path
 
-        let startPos = path.LastIndexOf("lib/")
-        let endPos = path.IndexOf('/', startPos + 4)
-        if startPos < 0 then None 
-        elif endPos < 0 then Some("")
-        else 
-            Some(path.Substring(startPos + 4, endPos - startPos - 4))
+    member this.ExtractBuildFolder path = Utils.extractPath "build" path
 
-    member this.MapFolders(mapF) = { this with LibFolders = List.map mapF this.LibFolders }
+    member this.MapFolders(mapF) = { this with ReferenceFileFolders = List.map mapF this.ReferenceFileFolders; TargetsFileFolders = List.map mapF this.TargetsFileFolders  }
     
     member this.MapFiles(mapF) = 
         this.MapFolders(fun folder -> { folder with Files = mapF folder.Files })
 
-    member this.AddPackageFiles(path : LibFolder, file : string, references) : InstallModel =
+    member this.AddPackageFile(path : LibFolder, file : string, references) : InstallModel =
         let install = 
             match references with
             | NuspecReferences.All -> true
@@ -139,25 +170,23 @@ type InstallModel =
 
         if not install then this else
         
-        let folders = List.map (fun p -> 
+        let folders = 
+            this.ReferenceFileFolders
+            |> List.map (fun p -> 
                                if p.Name = path.Name then { p with Files = p.Files.AddReference file }
-                               else p) this.LibFolders
-        { this with LibFolders = folders }
+                               else p)
 
-    member this.AddFiles(files : seq<string>, references) : InstallModel =
-        Seq.fold (fun model file ->
-                    match model.ExtractLibFolder file with
-                    | Some folderName -> 
-                        match Seq.tryFind (fun folder -> folder.Name = folderName) model.LibFolders with
-                        | Some path -> model.AddPackageFiles(path, file, references)
-                        | _ -> model
-                    | None -> model) this files
+        { this with ReferenceFileFolders = folders }
 
-    member this.AddReferences(libs, references) : InstallModel = 
-        this.AddLibFolders(libs)
-            .AddFiles(libs, references)
+    member this.AddTargetsFile(path : LibFolder, file : string) : InstallModel =        
+        let folders = 
+            this.TargetsFileFolders
+            |> List.map (fun p -> 
+                               if p.Name = path.Name then { p with Files = p.Files.AddTargetsFile file }
+                               else p) 
+        { this with TargetsFileFolders = folders }
     
-    member this.AddReferences(libs) = this.AddReferences(libs, NuspecReferences.All)
+    member this.AddReferences(libs) = this.AddLibReferences(libs, NuspecReferences.All)
     
     member this.AddFrameworkAssemblyReference(reference:FrameworkAssemblyReference) : InstallModel =
         let referenceApplies (folder : LibFolder) =
@@ -167,6 +196,12 @@ type InstallModel =
                 restrictions
                 |> List.exists (fun restriction ->
                       match restriction with
+                      | FrameworkRestriction.Portable p ->
+                            folder.Targets 
+                            |> List.exists (fun target ->
+                                match target with
+                                | SinglePlatform t -> false
+                                | _ -> true)
                       | FrameworkRestriction.Exactly target ->
                             folder.GetSinglePlatforms() 
                             |> List.exists (fun t -> t = target)
@@ -188,16 +223,21 @@ type InstallModel =
         |> Seq.fold (fun model reference -> model.AddFrameworkAssemblyReference reference) this
     
     member this.FilterBlackList() = 
-        let includeLibs = function
-            | Reference.Library lib -> not (lib.EndsWith ".dll" || lib.EndsWith ".exe")
+        let includeReferences = function
+            | Reference.Library lib -> not (lib.ToLower().EndsWith ".dll" || lib.ToLower().EndsWith ".exe")
+            | Reference.TargetsFile targetsFile -> 
+                (not (targetsFile.ToLower().EndsWith ".props" || targetsFile.ToLower().EndsWith ".targets")) ||
+                targetsFile.ToLower().EndsWith("microsoft.bcl.build.targets") // would install a targets file causing the build to fail in VS
             | _ -> false
 
         let excludeSatelliteAssemblies = function
             | Reference.Library lib -> lib.EndsWith ".resources.dll"
             | _ -> false
 
+        let blacklisted (blacklist : string list) (file : string) = blacklist |> List.exists (fun blf -> file.ToLower().EndsWith (blf.ToLower()))
+
         let blackList = 
-            [ includeLibs
+            [ includeReferences
               excludeSatelliteAssemblies]
 
         blackList
@@ -208,16 +248,7 @@ type InstallModel =
     
     member this.FilterReferences(references) =
         let inline mapF (files:InstallFiles) = {files with References = files.References |> Set.filter (fun reference -> Set.contains reference.ReferenceName references |> not) }
-        this.MapFiles(fun files -> mapF files)
-
-    member this.GetReferences = 
-        lazy ([ for lib in this.LibFolders do
-                    yield! lib.Files.References]                    
-              |> Set.ofList)
-    
-    member this.GetReferenceNames() = 
-        this.GetReferences.Force()
-        |> Set.map (fun lib -> lib.ReferenceName)
+        this.MapFiles mapF
 
     member this.ApplyFrameworkRestrictions(restrictions:FrameworkRestrictions) =
         match restrictions with
@@ -234,31 +265,53 @@ type InstallModel =
                                 |> List.exists (fun restriction ->
                                         match restriction with
                                         | FrameworkRestriction.Exactly fw -> pf = fw
+                                        | FrameworkRestriction.Portable r -> false
                                         | FrameworkRestriction.AtLeast fw -> pf >= fw                
                                         | FrameworkRestriction.Between(min,max) -> pf >= min && pf < max)
-                             | _ -> false) }                
+                             | _ -> 
+                                restrictions
+                                |> List.exists (fun restriction ->
+                                        match restriction with
+                                        | FrameworkRestriction.Portable r -> true
+                                        | _ -> false))}
 
             {this with 
-                LibFolders = 
-                    this.LibFolders
+                ReferenceFileFolders = 
+                    this.ReferenceFileFolders
                     |> List.map applRestriction
-                    |> List.filter (fun folder -> folder.Targets <> [])}    
+                    |> List.filter (fun folder -> folder.Targets <> []) 
 
-    member this.GetFrameworkAssemblies = 
-        lazy ([ for lib in this.LibFolders do
+                TargetsFileFolders = 
+                    this.TargetsFileFolders
+                    |> List.map applRestriction
+                    |> List.filter (fun folder -> folder.Targets <> [])                     }    
+
+    member this.GetFrameworkAssembliesLazy = 
+        lazy ([ for lib in this.ReferenceFileFolders do
                     yield! lib.Files.GetFrameworkAssemblies()]
               |> Set.ofList)
 
+    member this.GetLibReferencesLazy = 
+        lazy ([ for lib in this.ReferenceFileFolders do
+                    yield! lib.Files.References] 
+              |> Set.ofList)
+
+    member this.GetTargetsFilesLazy = 
+        lazy ([ for lib in this.TargetsFileFolders do
+                    yield! lib.Files.References] 
+              |> Set.ofList)
+
     member this.RemoveIfCompletelyEmpty() = 
-        if Set.isEmpty (this.GetFrameworkAssemblies.Force()) &&  Set.isEmpty (this.GetReferences.Force()) then
+        if Set.isEmpty (this.GetFrameworkAssembliesLazy.Force()) && Set.isEmpty (this.GetLibReferencesLazy.Force()) && Set.isEmpty (this.GetTargetsFilesLazy.Force()) then
             InstallModel.EmptyModel(this.PackageName,this.PackageVersion)
         else
             this
     
-    static member CreateFromLibs(packageName, packageVersion, frameworkRestrictions:FrameworkRestrictions, libs, nuspec : Nuspec) = 
+    static member CreateFromLibs(packageName, packageVersion, frameworkRestrictions:FrameworkRestrictions, libs, targetsFiles, nuspec : Nuspec) = 
         InstallModel
             .EmptyModel(packageName, packageVersion)
-            .AddReferences(libs, nuspec.References)
+            .AddLibReferences(libs, nuspec.References)
+            .AddTargetsFiles(targetsFiles)
             .AddFrameworkAssemblyReferences(nuspec.FrameworkAssemblyReferences)
             .FilterBlackList()
             .ApplyFrameworkRestrictions(frameworkRestrictions)

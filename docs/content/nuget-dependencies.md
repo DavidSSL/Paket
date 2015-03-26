@@ -12,7 +12,7 @@ The [`paket.lock` file](lock-file.html) will reflect the sources selected by dep
 
 ### NuGet feeds
 
-Paket supports NuGet feeds like those provided by [nuget.org](http://www.nuget.org) or [TeamCity](http://www.jetbrains.com/teamcity/).
+Paket supports NuGet feeds like those provided by [nuget.org](http://www.nuget.org), [MyGet](https://www.myget.org/) or [TeamCity](http://www.jetbrains.com/teamcity/).
 
 Please note that you need to specify all NuGet sources, including the default feed from [nuget.org](http://www.nuget.org). Paket does not take the current machine's NuGet Package Sources configuration (that you set up e.g. using Visual Studio) into account.
 
@@ -30,7 +30,7 @@ If you don't want to check your username and password into source control, you c
 
 `%PRIVATE_FEED_USER%` and `%PRIVATE_FEED_PASS%` will be expanded with the contents of your `PRIVATE_FEED_USER` and `PRIVATE_FEED_PASS` environment variables.
 
-The [paket.lock](lock-file.html) will also reflect these settings.
+The [`paket.lock` file](lock-file.html) will also reflect these settings.
 
 ### Path sources
 
@@ -142,8 +142,41 @@ If you want to dependend on prereleases then Paket can assist you. In contrast t
 
     nuget Example >= 1.2.3 alpha      // at least 1.2.3 including alpha versions
     nuget Example >= 2 beta rc        // at least 2.0 including rc and beta versions
-    nuget Example >= 3 rc             // at least 3.0 but including rc versions 
+    nuget Example >= 3 rc             // at least 3.0 but including rc versions
     nuget Example >= 3 prerelease     // at least 3.0 but including all prerelease versions
+
+### Framework restrictions
+
+Sometimes you don't want to generate dependencies for older framework versions. You can control this in the [`paket.dependencies` file](dependencies-file.html):
+
+    nuget Example >= 2.0 framework: net35, net40  // .NET 3.5 and .NET 4.0
+    nuget Example >= 2.0 framework: >= net45      // .NET 4.5 and above
+
+### No content option
+
+This option disables the installation of any content files:
+    
+    source https://nuget.org/api/v2
+
+    nuget jQuery >= 0 content: none // we don't install jQuery content files
+    nuget UnionArgParser ~> 0.7
+
+### copy_local settings
+
+It's possible to influence the `Private` property for references in project files:
+
+    source https://nuget.org/api/v2
+
+    nuget Newtonsoft.Json copy_local: false
+
+### import_targets settings
+
+If you don't want to import `.targets` and `.props` files you can disable it via the `import_targets` switch:
+
+    source https://nuget.org/api/v2
+
+    nuget Microsoft.Bcl.Build import_targets: false // we don't import .targets and .props
+    nuget UnionArgParser ~> 0.7
 
 ### Paket's NuGet-style dependency resolution for transitive dependencies
 

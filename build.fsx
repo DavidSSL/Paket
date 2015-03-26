@@ -61,33 +61,47 @@ let gitRaw = environVarOrDefault "gitRaw" "https://raw.github.com/fsprojects"
 // --------------------------------------------------------------------------------------
 
 let buildDir = "bin"
+let tempDir = "temp"
 let buildMergedDir = buildDir @@ "merged"
 
 
 // Read additional information from the release notes document
-let release = LoadReleaseNotes "RELEASE_NOTES.md"
+let releaseNotesData = 
+    File.ReadAllLines "RELEASE_NOTES.md"
+    |> parseAllReleaseNotes
+
+let release = List.head releaseNotesData
+let stable = 
+    match releaseNotesData |> List.tryFind (fun r -> r.NugetVersion.Contains("-") |> not) with
+    | Some stable -> stable
+    | _ -> release
 
 let genFSAssemblyInfo (projectPath) =
     let projectName = System.IO.Path.GetFileNameWithoutExtension(projectPath)
-    let basePath = "src/" + projectName
-    let fileName = basePath + "/AssemblyInfo.fs"
+    let folderName = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(projectPath))
+    let basePath = "src" @@ folderName
+    let fileName = basePath @@ "AssemblyInfo.fs"
     CreateFSharpAssemblyInfo fileName
       [ Attribute.Title (projectName)
         Attribute.Product project
+        Attribute.Company (authors |> String.concat ", ")
         Attribute.Description summary
         Attribute.Version release.AssemblyVersion
-        Attribute.FileVersion release.AssemblyVersion ]
+        Attribute.FileVersion release.AssemblyVersion
+        Attribute.InformationalVersion release.NugetVersion ]
 
 let genCSAssemblyInfo (projectPath) =
     let projectName = System.IO.Path.GetFileNameWithoutExtension(projectPath)
-    let basePath = "src/" + projectName + "/Properties"
-    let fileName = basePath + "/AssemblyInfo.cs"
+    let folderName = System.IO.Path.GetDirectoryName(projectPath)
+    let basePath = folderName @@ "Properties"
+    let fileName = basePath @@ "AssemblyInfo.cs"
     CreateCSharpAssemblyInfo fileName
       [ Attribute.Title (projectName)
         Attribute.Product project
         Attribute.Description summary
         Attribute.Version release.AssemblyVersion
-        Attribute.FileVersion release.AssemblyVersion ]
+        Attribute.FileVersion release.AssemblyVersion
+        Attribute.InformationalVersion release.NugetVersion ]
 
 // Generate assembly info files with the right version & up-to-date information
 Target "AssemblyInfo" (fun _ ->
@@ -101,7 +115,7 @@ Target "AssemblyInfo" (fun _ ->
 // Clean build results
 
 Target "Clean" (fun _ ->
-    CleanDirs [buildDir; "temp"]
+    CleanDirs [buildDir; tempDir]
 )
 
 Target "CleanDocs" (fun _ ->
@@ -143,7 +157,7 @@ Target "MergePaketTool" (fun _ ->
     let result =
         ExecProcess (fun info ->
             info.FileName <- currentDirectory @@ "tools" @@ "ILRepack" @@ "ILRepack.exe"
-            info.Arguments <- sprintf "/internalize /verbose /lib:%s /ver:%s /out:%s %s" buildDir release.AssemblyVersion (buildMergedDir @@ "paket.exe") toPack
+            info.Arguments <- sprintf "/verbose /lib:%s /ver:%s /out:%s %s" buildDir release.AssemblyVersion (buildMergedDir @@ "paket.exe") toPack
             ) (TimeSpan.FromMinutes 5.)
 
     if result <> 0 then failwithf "Error during ILRepack execution."
@@ -170,38 +184,19 @@ Target "SignAssemblies" (fun _ ->
             if result <> 0 then failwithf "Error during signing %s with %s" executable pfx)
 )
 
-Target "NuGet" (fun _ ->
+Target "NuGet" (fun _ ->    
+    Paket.Pack (fun p -> 
+        { p with 
+            ToolPath = "bin/merged/paket.exe" 
+            Version = release.NugetVersion
+            ReleaseNotes = toLines release.Notes })
+)
 
-    NuGet (fun p -> 
-        { p with Authors = authors
-                 Project = "Paket.Core"
-                 Summary = summary
-                 Description = description
-                 Version = release.NugetVersion
-                 ReleaseNotes = toLines release.Notes
-                 Tags = tags
-                 OutputPath = "bin"
-                 Dependencies = 
-                    ["Newtonsoft.Json", GetPackageVersion "packages" "Newtonsoft.Json" 
-                     "DotNetZip", GetPackageVersion "packages" "DotNetZip" 
-                     "FSharp.Core", GetPackageVersion "packages" "FSharp.Core" ]
-                 AccessKey = getBuildParamOrDefault "nugetkey" ""
-                 Publish = hasBuildParam "nugetkey" }) 
-       "nuget/Paket.Core.nuspec"
-
-    NuGet (fun p -> 
-        { p with Authors = authors
-                 Project = "Paket"
-                 Summary = summary
-                 Description = description
-                 Version = release.NugetVersion
-                 ReleaseNotes = toLines release.Notes
-                 Tags = tags
-                 OutputPath = "bin"
-                 AccessKey = getBuildParamOrDefault "nugetkey" ""
-                 Publish = hasBuildParam "nugetkey"
-                 Dependencies = [] }) 
-       "nuget/Paket.nuspec"
+Target "PublishNuGet" (fun _ ->
+    Paket.Push (fun p -> 
+        { p with 
+            ToolPath = "bin/merged/paket.exe"
+            WorkingDir = tempDir }) 
 )
 
 // --------------------------------------------------------------------------------------
@@ -212,18 +207,23 @@ Target "GenerateReferenceDocs" (fun _ ->
       failwith "generating reference documentation failed"
 )
 
-let generateHelp fail =
-    if executeFSIWithArgs "docs/tools" "generate.fsx" ["--define:RELEASE"; "--define:HELP"] [] then
+let generateHelp' fail debug =
+    let args =
+        if debug then ["--define:HELP"]
+        else ["--define:RELEASE"; "--define:HELP"]
+    if executeFSIWithArgs "docs/tools" "generate.fsx" args [] then
         traceImportant "Help generated"
     else
         if fail then
             failwith "generating help documentation failed"
         else
             traceImportant "generating help documentation failed"
-    
+
+let generateHelp fail =
+    generateHelp' fail false
 
 Target "GenerateHelp" (fun _ ->
-    DeleteFile "docs/content/release-notes.md"    
+    DeleteFile "docs/content/release-notes.md"
     CopyFile "docs/content/" "RELEASE_NOTES.md"
     Rename "docs/content/release-notes.md" "docs/content/RELEASE_NOTES.md"
 
@@ -237,6 +237,17 @@ Target "GenerateHelp" (fun _ ->
     generateHelp true
 )
 
+Target "GenerateHelpDebug" (fun _ ->
+    DeleteFile "docs/content/release-notes.md"
+    CopyFile "docs/content/" "RELEASE_NOTES.md"
+    Rename "docs/content/release-notes.md" "docs/content/RELEASE_NOTES.md"
+
+    DeleteFile "docs/content/license.md"
+    CopyFile "docs/content/" "LICENSE.txt"
+    Rename "docs/content/license.md" "docs/content/LICENSE.txt"
+
+    generateHelp' true true
+)
 
 Target "KeepRunning" (fun _ ->    
     use watcher = new FileSystemWatcher(DirectoryInfo("docs/content").FullName,"*.*")
@@ -264,8 +275,11 @@ Target "ReleaseDocs" (fun _ ->
     CleanDir tempDocsDir
     Repository.cloneSingleBranch "" (gitHome + "/" + gitName + ".git") "gh-pages" tempDocsDir
 
-    fullclean tempDocsDir
-    CopyRecursive "docs/output" tempDocsDir true |> tracefn "%A"
+    CopyRecursive "docs/output" tempDocsDir true |> tracefn "%A"    
+    
+    File.WriteAllText("temp/gh-pages/latest",sprintf "https://github.com/fsprojects/Paket/releases/download/%s/paket.exe" release.NugetVersion)
+    File.WriteAllText("temp/gh-pages/stable",sprintf "https://github.com/fsprojects/Paket/releases/download/%s/paket.exe" stable.NugetVersion)
+
     StageAll tempDocsDir
     Git.Commit.Commit tempDocsDir (sprintf "Update generated documentation for version %s" release.NugetVersion)
     Branches.push tempDocsDir
@@ -319,6 +333,9 @@ Target "All" DoNothing
   ==> "GenerateReferenceDocs"
   ==> "GenerateDocs"
 
+"CleanDocs"
+  ==> "GenerateHelpDebug"
+
 "GenerateHelp"
   ==> "KeepRunning"
     
@@ -326,6 +343,7 @@ Target "All" DoNothing
   ==> "Release"
 
 "BuildPackage"
+  ==> "PublishNuGet"
   ==> "Release"
 
 RunTargetOrDefault "All"

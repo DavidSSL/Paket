@@ -7,8 +7,10 @@ open TestHelpers
 open Paket.Domain
 open Paket.ModuleResolver
 open Paket.Requirements
+open Paket.PackageSources
 
-let lockFile = """NUGET
+let lockFile = """COPY-LOCAL: FALSE
+NUGET
   remote: https://nuget.org/api/v2
   specs:
     Castle.Windsor (2.1)
@@ -34,6 +36,8 @@ let ``should parse lock file``() =
     let packages = List.rev lockFile.Packages
     packages.Length |> shouldEqual 6
     lockFile.Options.Strict |> shouldEqual false
+    lockFile.Options.Settings.CopyLocal |> shouldEqual false
+    lockFile.Options.Settings.ImportTargets |> shouldEqual true
 
     packages.[0].Source |> shouldEqual PackageSources.DefaultNugetSource
     packages.[0].Name |> shouldEqual (PackageName "Castle.Windsor")
@@ -70,6 +74,7 @@ let ``should parse lock file``() =
     sourceFiles.[0].ToString() |> shouldEqual "fsharp/FAKE:7699e40e335f3cc54ab382a8969253fecc1e08a9 src/app/FAKE/Cli.fs"
 
 let strictLockFile = """REFERENCES: STRICT
+IMPORT-TARGETS: FALSE
 NUGET
   remote: https://nuget.org/api/v2
   specs:
@@ -92,6 +97,8 @@ let ``should parse strict lock file``() =
     packages.Length |> shouldEqual 6
     lockFile.Options.Strict |> shouldEqual true
     lockFile.Options.Redirects |> shouldEqual false
+    lockFile.Options.Settings.ImportTargets |> shouldEqual false
+    lockFile.Options.Settings.CopyLocal |> shouldEqual true
 
     packages.[5].Source |> shouldEqual PackageSources.DefaultNugetSource
     packages.[5].Name |> shouldEqual (PackageName "log4net")
@@ -99,8 +106,10 @@ let ``should parse strict lock file``() =
     packages.[5].Dependencies |> shouldEqual (Set.ofList [PackageName "log", VersionRequirement.AllReleases, []])
 
 let redirectsLockFile = """REDIRECTS: ON
+IMPORT-TARGETS: TRUE
+COPY-LOCAL: TRUE
 NUGET
-  remote: https://nuget.org/api/v2
+  remote: "D:\code\temp with space"
   specs:
     Castle.Windsor (2.1)
 """   
@@ -109,9 +118,32 @@ NUGET
 let ``should parse redirects lock file``() = 
     let lockFile = LockFileParser.Parse(toLines redirectsLockFile)
     let packages = List.rev lockFile.Packages
+    
     packages.Length |> shouldEqual 1
     lockFile.Options.Strict |> shouldEqual false
     lockFile.Options.Redirects |> shouldEqual true
+    lockFile.Options.Settings.ImportTargets |> shouldEqual true
+    lockFile.Options.Settings.CopyLocal |> shouldEqual true
+
+    packages.Head.Source |> shouldEqual (PackageSource.LocalNuget("D:\code\\temp with space"))
+
+let lockFileWithFrameworkRestrictions = """FRAMEWORK: >= NET45
+IMPORT-TARGETS: TRUE
+NUGET
+  remote: https://nuget.org/api/v2
+  specs:
+    Castle.Windsor (2.1)
+"""   
+
+[<Test>]
+let ``should parse lock file with framework restrictions``() = 
+    let lockFile = LockFileParser.Parse(toLines lockFileWithFrameworkRestrictions)
+    let packages = List.rev lockFile.Packages
+    packages.Length |> shouldEqual 1
+    lockFile.Options.Strict |> shouldEqual false
+    lockFile.Options.Redirects |> shouldEqual false
+    lockFile.Options.Settings.ImportTargets |> shouldEqual true
+    lockFile.Options.Settings.CopyLocal |> shouldEqual true
 
 let dogfood = """NUGET
   remote: https://nuget.org/api/v2
@@ -159,7 +191,7 @@ let ``should parse own lock file``() =
     packages.[1].Source |> shouldEqual PackageSources.DefaultNugetSource
     packages.[1].Name |> shouldEqual (PackageName "FAKE")
     packages.[1].Version |> shouldEqual (SemVer.Parse "3.5.5")
-    packages.[3].FrameworkRestrictions |> shouldEqual []
+    packages.[1].Settings.FrameworkRestrictions |> shouldEqual []
 
     lockFile.SourceFiles.[0].Name |> shouldEqual "modules/Octokit/Octokit.fsx"
 
@@ -209,7 +241,7 @@ let ``should parse own lock file2``() =
     packages.[1].Source |> shouldEqual PackageSources.DefaultNugetSource
     packages.[1].Name |> shouldEqual (PackageName "FAKE")
     packages.[1].Version |> shouldEqual (SemVer.Parse "3.5.5")
-    packages.[3].FrameworkRestrictions |> shouldEqual []
+    packages.[3].Settings.FrameworkRestrictions |> shouldEqual []
 
     lockFile.SourceFiles.[0].Name |> shouldEqual "modules/Octokit/Octokit.fsx"
 
@@ -242,12 +274,57 @@ let ``should parse framework restricted lock file``() =
     packages.[3].Source |> shouldEqual PackageSources.DefaultNugetSource
     packages.[3].Name |> shouldEqual (PackageName "LinqBridge")
     packages.[3].Version |> shouldEqual (SemVer.Parse "1.3.0")
-    packages.[3].FrameworkRestrictions |> shouldEqual ([FrameworkRestriction.Between(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V2),FrameworkIdentifier.DotNetFramework(FrameworkVersion.V3_5))])
+    packages.[3].Settings.FrameworkRestrictions |> shouldEqual ([FrameworkRestriction.Between(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V2),FrameworkIdentifier.DotNetFramework(FrameworkVersion.V3_5))])
+    packages.[3].Settings.ImportTargets |> shouldEqual true
 
     packages.[5].Source |> shouldEqual PackageSources.DefaultNugetSource
     packages.[5].Name |> shouldEqual (PackageName "ReadOnlyCollectionInterfaces")
     packages.[5].Version |> shouldEqual (SemVer.Parse "1.0.0")
-    packages.[5].FrameworkRestrictions 
+    packages.[5].Settings.FrameworkRestrictions 
+    |> shouldEqual ([FrameworkRestriction.Exactly(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V2))
+                     FrameworkRestriction.Exactly(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V3_5))
+                     FrameworkRestriction.AtLeast(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V4_Client))])
+
+let frameworkRestricted' = """NUGET
+  remote: https://nuget.org/api/v2
+  specs:
+    Fleece (0.4.0)
+      FSharpPlus (>= 0.0.4)
+      ReadOnlyCollectionExtensions (>= 1.2.0)
+      ReadOnlyCollectionInterfaces (1.0.0) - framework: >= net40
+      System.Json (>= 4.0.20126.16343)
+    FsControl (1.0.9)
+    FSharpPlus (0.0.4)
+      FsControl (>= 1.0.9)
+    LinqBridge (1.3.0) - import_targets: false, content: none, framework: >= net20 < net35
+    ReadOnlyCollectionExtensions (1.2.0)
+      LinqBridge (>= 1.3.0) - framework: >= net20 < net35
+      ReadOnlyCollectionInterfaces (1.0.0) - framework: net20, net35, >= net40
+    ReadOnlyCollectionInterfaces (1.0.0) - copy_local: false, import_targets: false, framework: net20, net35, >= net40
+    System.Json (4.0.20126.16343)
+"""
+
+[<Test>]
+let ``should parse framework restricted lock file in new syntax``() = 
+    let lockFile = LockFileParser.Parse(toLines frameworkRestricted')
+    let packages = List.rev lockFile.Packages
+    packages.Length |> shouldEqual 7
+
+    packages.[3].Source |> shouldEqual PackageSources.DefaultNugetSource
+    packages.[3].Name |> shouldEqual (PackageName "LinqBridge")
+    packages.[3].Version |> shouldEqual (SemVer.Parse "1.3.0")
+    packages.[3].Settings.FrameworkRestrictions |> shouldEqual ([FrameworkRestriction.Between(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V2),FrameworkIdentifier.DotNetFramework(FrameworkVersion.V3_5))])
+    packages.[3].Settings.CopyLocal |> shouldEqual true
+    packages.[3].Settings.ImportTargets |> shouldEqual false
+    packages.[3].Settings.OmitContent |> shouldEqual true
+
+    packages.[5].Source |> shouldEqual PackageSources.DefaultNugetSource
+    packages.[5].Name |> shouldEqual (PackageName "ReadOnlyCollectionInterfaces")
+    packages.[5].Version |> shouldEqual (SemVer.Parse "1.0.0")
+    packages.[5].Settings.ImportTargets |> shouldEqual false
+    packages.[5].Settings.CopyLocal |> shouldEqual false
+    packages.[5].Settings.OmitContent |> shouldEqual false
+    packages.[5].Settings.FrameworkRestrictions 
     |> shouldEqual ([FrameworkRestriction.Exactly(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V2))
                      FrameworkRestriction.Exactly(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V3_5))
                      FrameworkRestriction.AtLeast(FrameworkIdentifier.DotNetFramework(FrameworkVersion.V4_Client))])
@@ -267,53 +344,27 @@ let ``should parse simple http reference``() =
     references.[0].Name |> shouldEqual "ikvmbin-8.0.5449.0.zip"  
     references.[0].Origin |> shouldEqual (SingleSourceFileOrigin.HttpLink("http://www.frijters.net/ikvmbin-8.0.5449.0.zip"))
 
-let realWorldHTTP = """
-NUGET
-  remote: https://nuget.org/api/v2
+
+let lockFileForStanfordNLPdotNET = """HTTP
+  remote: http://www.frijters.net
   specs:
-    Costura.Fody (1.3.3.0)
-      Fody (>= 1.26.1)
-    dotNetRDF (1.0.6.3421)
-      HtmlAgilityPack (>= 1.4.6)
-      Newtonsoft.Json (>= 6.0.3)
-      VDS.Common (1.3.0)
-    Eto.Parse (1.3.1.0)
-    FakeItEasy (1.25.1)
-    Fody (1.26.4)
-    gitlink (2.1.0)
-    HtmlAgilityPack (1.4.6)
-    ImpromptuInterface (6.2.2)
-    InfoOf.Fody (0.11.2.0)
-      Fody
-    json-ld.net (1.0.4)
-      Newtonsoft.Json (>= 4.0.1)
-    MethodTimer.Fody (1.15.2.0)
-      Fody
-    MSBuildTasks (1.4.0.88)
-    Newtonsoft.Json (6.0.7)
-    NullGuard.Fody (1.2.0.0)
-      Fody
-    NUnit (2.6.4)
-    SpecFlow (1.9.0)
-    StyleCop.MSBuild (4.7.49.0)
-    StyleCopPlus.MSBuild (4.7.49.5)
-      StyleCop.MSBuild (>= 4.7.49.0)
-    VDS.Common (1.3.0)
-    Zoltu.Versioning (1.2.15.0)
-GITHUB
-  remote: tpluscode/FileVersionExtractor
+    ikvmbin-8.0.5449.0.zip (/ikvmbin-8.0.5449.0.zip)
+  remote: http://nlp.stanford.edu
   specs:
-    FULLPROJECT (b1126aa31f362d0cd1e19e7abe1acd30da35ab6a)
-HTTP
-  remote: http://www.w3.org/2013/N-QuadsTests/TESTS.zip
-  specs:
-    TESTS.zip
-"""
+    stanford-corenlp-full-2014-10-31.zip (/software/stanford-corenlp-full-2014-10-31.zip)
+    stanford-ner-2014-10-26.zip (/software/stanford-ner-2014-10-26.zip)
+    stanford-parser-full-2014-10-31.zip (/software/stanford-parser-full-2014-10-31.zip)
+    stanford-postagger-full-2014-10-26.zip (/software/stanford-postagger-full-2014-10-26.zip)
+    stanford-segmenter-2014-10-26.zip (/software/stanford-segmenter-2014-10-26.zip)"""
 
 [<Test>]
-let ``should parse real world http reference``() = 
-    let lockFile = LockFileParser.Parse(toLines realWorldHTTP)
+let ``should parse lock file for http Stanford.NLP.NET project``() =
+    let lockFile = LockFileParser.Parse(toLines lockFileForStanfordNLPdotNET)
     let references = lockFile.SourceFiles
 
-    references.[0].Name |> shouldEqual "TESTS.zip"  
-    references.[0].Origin |> shouldEqual (SingleSourceFileOrigin.HttpLink("http://www.w3.org/2013/N-QuadsTests/TESTS.zip"))
+    references.Length |> shouldEqual 6
+
+    references.[0].Origin |> shouldEqual (SingleSourceFileOrigin.HttpLink("http://nlp.stanford.edu"))
+    references.[0].Commit |> shouldEqual ("/software/stanford-segmenter-2014-10-26.zip")  // That's strange
+    references.[0].Project |> shouldEqual ""
+    references.[0].Name |> shouldEqual "stanford-segmenter-2014-10-26.zip"  

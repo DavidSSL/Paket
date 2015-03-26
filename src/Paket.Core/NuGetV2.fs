@@ -63,14 +63,16 @@ let rec private followODataLink getUrlContents url =
 let getAllVersionsFromNugetODataWithFilter (getUrlContents, nugetURL, package) = 
     // we cannot cache this
     let url = sprintf "%s/Packages?$filter=Id eq '%s'" nugetURL package
+    verbosefn "getAllVersionsFromNugetODataWithFilter from url '%s'" url
     followODataLink getUrlContents url
 
 /// Gets versions of the given package via OData via /FindPackagesById()?id='packageId'.
 let getAllVersionsFromNugetOData (getUrlContents, nugetURL, package) = 
-    async { 
+    async {
         // we cannot cache this
         try 
             let url = sprintf "%s/FindPackagesById()?id='%s'" nugetURL package
+            verbosefn "getAllVersionsFromNugetOData from url '%s'" url
             return! followODataLink getUrlContents url
         with _ -> return! getAllVersionsFromNugetODataWithFilter (getUrlContents, nugetURL, package)
     }
@@ -79,7 +81,9 @@ let getAllVersionsFromNugetOData (getUrlContents, nugetURL, package) =
 let getAllVersionsFromNuGet2(auth,nugetURL,package) = 
     // we cannot cache this
     async { 
-        let! raw = safeGetFromUrl(auth,sprintf "%s/package-versions/%s?includePrerelease=true" nugetURL package)
+        let url = sprintf "%s/package-versions/%s?includePrerelease=true" nugetURL package
+        verbosefn "getAllVersionsFromNuGet2 from url '%s'" url
+        let! raw = safeGetFromUrl(auth, url)
         let getUrlContents url = getFromUrl(auth, url)
         match raw with
         | None -> let! result = getAllVersionsFromNugetOData(getUrlContents, nugetURL, package)
@@ -89,7 +93,8 @@ let getAllVersionsFromNuGet2(auth,nugetURL,package) =
                 try 
                     let result = JsonConvert.DeserializeObject<string []>(data) |> Array.toSeq
                     return result
-                with _ -> let! result = getAllVersionsFromNugetOData(getUrlContents, nugetURL, package)
+                with _ -> verbosefn "exn when deserialising data '%s'" data
+                          let! result = getAllVersionsFromNugetOData(getUrlContents, nugetURL, package)
                           return result
             with exn -> 
                 return! failwithf "Could not get data from %s for package %s.%s Message: %s" nugetURL package 
@@ -120,6 +125,7 @@ let getAllVersions(auth, nugetURL, package) =
 /// Gets versions of the given package from local Nuget feed.
 let getAllVersionsFromLocalPath (localNugetPath, package) =
     async {
+        let localNugetPath = Utils.normalizeLocalPath localNugetPath
         let di = DirectoryInfo(localNugetPath)
         if not di.Exists then
             failwithf "The directory %s doesn't exist.%sPlease check the NuGet source feed definition in your paket.dependencies file." localNugetPath Environment.NewLine
@@ -138,12 +144,12 @@ let parseODataDetails(nugetURL,packageName,version,raw) =
     doc.LoadXml raw
                 
     let entry = 
-        match orElse (doc |> getNode "entry") (doc |> getNode "feed" |> optGetNode "entry" ) with
+        match (doc |> getNode "feed" |> optGetNode "entry" ) ++ (doc |> getNode "entry") with
         | Some node -> node
         | _ -> failwithf "unable to find entry node for package %s %O" packageName version
 
     let officialName =
-        match (entry |> getNode "properties" |> optGetNode "Id") |> orElse (entry |> getNode "title") with
+        match (entry |> getNode "properties" |> optGetNode "Id") ++ (entry |> getNode "title") with
         | Some node -> node.InnerText
         | _ -> failwithf "Could not get official package name for package %s %O" packageName version
         
@@ -175,12 +181,13 @@ let parseODataDetails(nugetURL,packageName,version,raw) =
                         a.[0],
                         (if a.Length > 1 then a.[1] else "0"),
                         (if a.Length > 2 && a.[2] <> "" then 
+                            if a.[2].ToLower().StartsWith("portable") then [FrameworkRestriction.Portable(a.[2])] else
                             match FrameworkDetection.Extract a.[2] with
                             | Some x -> [FrameworkRestriction.Exactly x]
                             | None -> []
                          else 
                             []))
-        |> Array.map (fun (name, version, restricted) -> PackageName name, NugetVersionRangeParser.parse version, restricted)
+        |> Array.map (fun (name, version, restricted) -> PackageName name, VersionRequirement.Parse version, restricted)
         |> Array.toList
 
     
@@ -254,17 +261,19 @@ let getDetailsFromNuget force auth nugetURL package (version:SemVerInfo) =
     async {
         try
             if not force && errorFile.Exists then
-                failwithf "errorfile for %s exists" package
+                failwithf "Error file for %s exists at %s" package errorFile.FullName
 
             let! (invalidCache,details) = loadFromCacheOrOData force cacheFile.FullName auth nugetURL package version
-            
+
+            verbosefn "loaded details for '%s@%O' from url '%s'" package version nugetURL
+
             errorFile.Delete()
             if invalidCache then
                 File.WriteAllText(cacheFile.FullName,JsonConvert.SerializeObject(details))
             return details
         with
         | exn -> 
-            File.WriteAllText(errorFile.FullName,"")
+            File.AppendAllText(errorFile.FullName,exn.ToString())
             raise exn
             return! getDetailsFromNuGetViaOData auth nugetURL package version
     } 
@@ -272,6 +281,7 @@ let getDetailsFromNuget force auth nugetURL package (version:SemVerInfo) =
 /// Reads direct dependencies from a nupkg file
 let getDetailsFromLocalFile localNugetPath package (version:SemVerInfo) =
     async {        
+        let localNugetPath = Utils.normalizeLocalPath localNugetPath
         let nupkg = 
             let v1 = FileInfo(Path.Combine(localNugetPath, sprintf "%s.%s.nupkg" package (version.ToString())))
             if v1.Exists then v1 else
@@ -377,6 +387,7 @@ let DownloadPackage(root, auth, url, name, version:SemVerInfo, force) =
 
                 let request = HttpWebRequest.Create(Uri nugetPackage.DownloadUrl) :?> HttpWebRequest
                 request.AutomaticDecompression <- DecompressionMethods.GZip ||| DecompressionMethods.Deflate
+                request.UserAgent <- "Paket"
 
                 match auth with
                 | None -> request.UseDefaultCredentials <- true
@@ -413,7 +424,7 @@ let DownloadPackage(root, auth, url, name, version:SemVerInfo, force) =
     }
 
 /// Finds all libraries in a nuget package.
-let GetLibFiles(targetFolder) =    
+let GetLibFiles(targetFolder) = 
     let libs = 
         let dir = DirectoryInfo(targetFolder)
         let libPath = dir.FullName.ToLower() + Path.DirectorySeparatorChar.ToString() + "lib" 
@@ -422,7 +433,7 @@ let GetLibFiles(targetFolder) =
             |> Array.filter (fun fi -> fi.FullName.ToLower() = libPath)
             |> Array.collect (fun dir -> dir.GetFiles("*.*",SearchOption.AllDirectories))
         else
-            Array.empty
+            [||]
 
     if Logging.verbose then
         if Array.isEmpty libs then 
@@ -433,10 +444,32 @@ let GetLibFiles(targetFolder) =
 
     libs
 
+/// Finds all targets files in a nuget package.
+let GetTargetsFiles(targetFolder) = 
+    let targetsFiles = 
+        let dir = DirectoryInfo(targetFolder)
+        let path = dir.FullName.ToLower() + Path.DirectorySeparatorChar.ToString() + "build" 
+        if dir.Exists then
+            dir.GetDirectories()
+            |> Array.filter (fun fi -> fi.FullName.ToLower() = path)
+            |> Array.collect (fun dir -> dir.GetFiles("*.*",SearchOption.AllDirectories))
+        else
+            [||]
+
+    if Logging.verbose then
+        if Array.isEmpty targetsFiles then
+            verbosefn "No .targets files found in %s" targetFolder 
+        else
+            let s = String.Join(Environment.NewLine + "  - ",targetsFiles |> Array.map (fun l -> l.FullName))
+            verbosefn ".targets files found in %s:%s  - %s" targetFolder Environment.NewLine s
+
+    targetsFiles
+
 let GetPackageDetails force sources (PackageName package) (version:SemVerInfo) : PackageResolver.PackageDetails= 
     let rec tryNext xs = 
         match xs with
         | source :: rest -> 
+            verbosefn "Trying source '%O'" source
             try 
                 match source with
                 | Nuget source -> 
@@ -451,8 +484,10 @@ let GetPackageDetails force sources (PackageName package) (version:SemVerInfo) :
                     getDetailsFromLocalFile path package version 
                     |> Async.RunSynchronously
                 |> fun x -> source,x
-            with _ -> tryNext rest
-        | [] -> failwithf "Couldn't get package details for package %s on %A." package (sources |> List.map (fun (s:PackageSource) -> s.ToString()))
+            with e ->
+              verbosefn "Source '%O' exception: %O" source e
+              tryNext rest
+        | [] -> failwithf "Couldn't get package details for package %s on any of %A." package (sources |> List.map (fun (s:PackageSource) -> s.ToString()))
     
     let source,nugetObject = tryNext sources
     { Name = PackageName nugetObject.PackageName

@@ -9,15 +9,16 @@ open PackageSources
 open System.Security.Cryptography
 open System.Text
 open System
+open Chessie.ErrorHandling
 
 let parse fileName = 
-    match NugetConfig.getConfigNode <| FileInfo(fileName) with
-    | Rop.Success(node,_) -> NugetConfig.overrideConfig NugetConfig.empty node
-    | _ -> failwithf "unable to parse %s" fileName
+    FileInfo(fileName)
+    |> NugetConfig.getConfigNode
+    |> returnOrFail
+    |> NugetConfig.overrideConfig NugetConfig.empty
 
 [<Test>]
 let ``can detect encrypted passwords in nuget.config``() = 
-
     // encrypted password is machine-specific, thus cannot be hardcoded in test file and needs to be generated dynamically
     let encrypted = 
         ProtectedData.Protect(
@@ -47,3 +48,12 @@ let ``can detect cleartextpasswords in nuget.config``() =
                       Some { Username = "myUser"; Password = "myPassword" } ]
           PackageRestoreEnabled = false
           PackageRestoreAutomatic = false }
+
+[<Test>]
+let ``ignores disabled nuget feed`` () =
+    parse "NuGetConfig/ConfigWithDisabledFeed.xml"
+    |> shouldEqual
+        { PackageSources = 
+            [ "https://www.nuget.org/api/v2/",None]
+          PackageRestoreEnabled = true
+          PackageRestoreAutomatic = true }

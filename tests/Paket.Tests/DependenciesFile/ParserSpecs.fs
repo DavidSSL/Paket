@@ -7,9 +7,10 @@ open FsUnit
 open TestHelpers
 open System
 open Paket.Domain
+open Paket.Requirements
 
 [<Test>]
-let ``should read emptx config``() = 
+let ``should read empty config``() = 
     let cfg = DependenciesFile.FromCode("")
     cfg.Options.Strict |> shouldEqual false
 
@@ -50,15 +51,14 @@ let ``should read simple config``() =
 let config2 = """
 source "http://nuget.org/api/v2"
 
-printfn "hello world from config"
-
+// this rocks
 nuget "FAKE" "~> 3.0"
 nuget "Rx-Main" "~> 2.2"
 nuget "MinPackage" "1.1.3"
 """
 
 [<Test>]
-let ``should read simple config with additional F# code``() = 
+let ``should read simple config with additional comment``() = 
     let cfg = DependenciesFile.FromCode(config2)
     cfg.DirectDependencies.[PackageName "Rx-Main"].Range |> shouldEqual (VersionRange.Between("2.2", "3.0"))
     cfg.DirectDependencies.[PackageName "FAKE"].Range |> shouldEqual (VersionRange.Between("3.0", "4.0"))
@@ -171,7 +171,42 @@ nuget "Microsoft.SqlServer.Types"
 [<Test>]
 let ``should read content none config``() = 
     let cfg = DependenciesFile.FromCode(noneContentConfig)
-    cfg.Options.OmitContent |> shouldEqual true
+    cfg.Options.Settings.OmitContent |> shouldEqual true
+    cfg.Options.Settings.CopyLocal |> shouldEqual true
+    cfg.Options.Settings.ImportTargets |> shouldEqual true
+
+    (cfg.Packages |> List.find (fun p -> p.Name = PackageName "Microsoft.SqlServer.Types")).Sources |> shouldEqual [PackageSource.NugetSource "http://nuget.org/api/v2"]
+
+let specificFrameworkConfig = """
+framework net40 net35
+source "http://nuget.org/api/v2" // first source
+
+nuget "Microsoft.SqlServer.Types"
+"""
+
+[<Test>]
+let ``should read config with specific framework``() = 
+    let cfg = DependenciesFile.FromCode(specificFrameworkConfig)
+    cfg.Options.Settings.OmitContent |> shouldEqual false
+    cfg.Options.Settings.CopyLocal |> shouldEqual true
+    cfg.Options.Settings.ImportTargets |> shouldEqual true
+
+    (cfg.Packages |> List.find (fun p -> p.Name = PackageName "Microsoft.SqlServer.Types")).Sources |> shouldEqual [PackageSource.NugetSource "http://nuget.org/api/v2"]
+
+let noTargetsImportConfig = """
+import_targets false
+copy_local false
+source "http://nuget.org/api/v2" // first source
+
+nuget "Microsoft.SqlServer.Types"
+"""
+
+[<Test>]
+let ``should read no targets import config``() = 
+    let cfg = DependenciesFile.FromCode(noTargetsImportConfig)
+    cfg.Options.Settings.ImportTargets |> shouldEqual false
+    cfg.Options.Settings.CopyLocal |> shouldEqual false
+    cfg.Options.Settings.OmitContent |> shouldEqual false
 
     (cfg.Packages |> List.find (fun p -> p.Name = PackageName "Microsoft.SqlServer.Types")).Sources |> shouldEqual [PackageSource.NugetSource "http://nuget.org/api/v2"]
 
@@ -187,6 +222,26 @@ nuget SignalR = 3.3.2
 [<Test>]
 let ``should read config without quotes``() = 
     let cfg = DependenciesFile.FromCode(configWithoutQuotes)
+    cfg.Options.Strict |> shouldEqual false
+    cfg.DirectDependencies.Count |> shouldEqual 4
+
+    cfg.DirectDependencies.[PackageName "Rx-Main"].Range |> shouldEqual (VersionRange.Between("2.0", "3.0"))
+    cfg.DirectDependencies.[PackageName "Castle.Windsor-log4net"].Range |> shouldEqual (VersionRange.Between("3.2", "4.0"))
+    cfg.DirectDependencies.[PackageName "FAKE"].Range |> shouldEqual (VersionRange.Exactly "1.1")
+    cfg.DirectDependencies.[PackageName "SignalR"].Range |> shouldEqual (VersionRange.Exactly "3.3.2")
+
+let configLocalQuotedSource = """source "D:\code\temp with space"
+
+nuget Castle.Windsor-log4net ~> 3.2
+nuget Rx-Main ~> 2.0
+nuget FAKE = 1.1
+nuget SignalR = 3.3.2
+"""
+
+[<Test>]
+let ``should read config local quoted source``() = 
+    let cfg = DependenciesFile.FromCode(configLocalQuotedSource)
+    cfg.Sources.Head |> shouldEqual (LocalNuget("D:\code\\temp with space"))
     cfg.Options.Strict |> shouldEqual false
     cfg.DirectDependencies.Count |> shouldEqual 4
 
@@ -278,15 +333,15 @@ let ``should read http source file from config without quotes with file specs``(
     dependencies.RemoteFiles
     |> shouldEqual
         [ { Owner = "www.fssnip.net"
-            Project = "raw/1M"
+            Project = ""
             Name = "test1.fs"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.fssnip.net/raw/1M"
-            Commit = None }
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.fssnip.net"
+            Commit = Some "/raw/1M" }
           { Owner = "www.fssnip.net"
-            Project = "raw/1M"
+            Project = ""
             Name = "src/test2.fs"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.fssnip.net/raw/1M/1"
-            Commit = None } ]
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.fssnip.net"
+            Commit = Some "/raw/1M/1" } ]
 
 [<Test>]
 let ``should read gist source file from config without quotes with file specs``() =
@@ -335,30 +390,30 @@ let ``should read http source file from config without quotes, parsing rules``()
     dependencies.RemoteFiles
     |> shouldEqual
         [ { Owner = "example"
-            Project = "example"
+            Project = ""
             Name = "example.fs"
             Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example"
-            Commit = None }
+            Commit = Some "/" }
           { Owner = "example"
-            Project = "item"
+            Project = ""
             Name = "item.fs"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example/item"
-            Commit = None }
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example"
+            Commit = Some "/item" }
           { Owner = "example"
-            Project = "item"
+            Project = ""
             Name = "item.fs"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example/item"
-            Commit = None }
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example"
+            Commit = Some "/item" }
           { Owner = "example"
-            Project = "item/3"
+            Project = ""
             Name = "3.fs"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example/item/3"
-            Commit = None }
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example"
+            Commit = Some "/item/3" }
           { Owner = "example"
-            Project = "item/3"
+            Project = ""
             Name = "1.fs"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example/item/3/1"
-            Commit = None } ]
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://example"
+            Commit = Some "/item/3/1" } ]
 
 [<Test>]
 let ``should read http binary references from config``() =
@@ -369,15 +424,15 @@ let ``should read http binary references from config``() =
     dependencies.RemoteFiles
     |> shouldEqual
         [ { Owner = "www.frijters.net"
-            Project = "ikvmbin-8.0.5449.0.zip"
+            Project = ""
             Name = "ikvmbin-8.0.5449.0.zip"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.frijters.net/ikvmbin-8.0.5449.0.zip"
-            Commit = None }
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.frijters.net"
+            Commit = Some "/ikvmbin-8.0.5449.0.zip" }
           { Owner = "www.frijters.net"
-            Project = "ikvmbin-8.0.5449.0.zip"
+            Project = ""
             Name = "ikvmbin.zip"
-            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.frijters.net/ikvmbin-8.0.5449.0.zip"
-            Commit = None } ]
+            Origin = ModuleResolver.SingleSourceFileOrigin.HttpLink "http://www.frijters.net"
+            Commit = Some "/ikvmbin-8.0.5449.0.zip" } ]
 
 
 let configWithoutVersions = """
@@ -468,7 +523,10 @@ nuget Nancy.Owin 0.22.2
 let ``should read config with local source``() = 
     let cfg = DependenciesFile.FromCode(configWithLocalSource)
 
-    cfg.DirectDependencies.[PackageName "Nancy.Owin"].Range |> shouldEqual (VersionRange.Specific (SemVer.Parse "0.22.2"))
+    let p = cfg.Packages |> List.find (fun x-> x.Name = PackageName "Nancy.Owin")
+    p.VersionRequirement.Range |> shouldEqual (VersionRange.Specific (SemVer.Parse "0.22.2"))
+    p.Settings.FrameworkRestrictions |> shouldEqual []
+
 
 [<Test>]
 let ``should read config with package name containing nuget``() = 
@@ -478,3 +536,82 @@ let ``should read config with package name containing nuget``() =
     let cfg = DependenciesFile.FromCode(config)
 
     cfg.DirectDependencies.[PackageName "nuget.Core"].Range |> shouldEqual (VersionRange.Specific (SemVer.Parse "0.1"))
+
+[<Test>]
+let ``should read config with single framework restriction``() = 
+    let config = """
+    nuget Foobar 1.2.3 framework: >= net40
+    """
+    let cfg = DependenciesFile.FromCode(config)
+
+    let p = cfg.Packages |> List.find (fun x-> x.Name = PackageName "Foobar")
+    p.VersionRequirement.Range |> shouldEqual (VersionRange.Specific (SemVer.Parse "1.2.3"))
+    p.Settings.FrameworkRestrictions |> shouldEqual [FrameworkRestriction.AtLeast(DotNetFramework(FrameworkVersion.V4_Client))]
+    p.Settings.ImportTargets |> shouldEqual true
+
+
+[<Test>]
+let ``should read config with framework restriction``() = 
+    let config = """
+    nuget Foobar 1.2.3 alpha beta framework: net35, >= net40
+    """
+    let cfg = DependenciesFile.FromCode(config)
+
+    let p = cfg.Packages |> List.find (fun x-> x.Name = PackageName "Foobar")
+    p.VersionRequirement.Range |> shouldEqual (VersionRange.Specific (SemVer.Parse "1.2.3"))
+    p.Settings.FrameworkRestrictions |> shouldEqual [FrameworkRestriction.Exactly(DotNetFramework(FrameworkVersion.V3_5)); FrameworkRestriction.AtLeast(DotNetFramework(FrameworkVersion.V4_Client))]
+    p.Settings.ImportTargets |> shouldEqual true
+    p.Settings.CopyLocal |> shouldEqual true
+
+[<Test>]
+let ``should read config with no targets import``() = 
+    let config = """
+    nuget Foobar 1.2.3 alpha beta import_targets: false, copy_local: false
+    """
+    let cfg = DependenciesFile.FromCode(config)
+
+    let p = cfg.Packages |> List.find (fun x-> x.Name = PackageName "Foobar")
+    p.VersionRequirement.Range |> shouldEqual (VersionRange.Specific (SemVer.Parse "1.2.3"))
+    p.Settings.FrameworkRestrictions |> shouldEqual []
+    p.Settings.ImportTargets |> shouldEqual false
+    p.Settings.CopyLocal |> shouldEqual false
+    p.Settings.OmitContent |> shouldEqual false
+
+[<Test>]
+let ``should read config with content none``() = 
+    let config = """
+    nuget Foobar 1.2.3 alpha beta content: none, copy_local: false
+    """
+    let cfg = DependenciesFile.FromCode(config)
+
+    let p = cfg.Packages |> List.find (fun x-> x.Name = PackageName "Foobar")
+    p.VersionRequirement.Range |> shouldEqual (VersionRange.Specific (SemVer.Parse "1.2.3"))
+    p.Settings.FrameworkRestrictions |> shouldEqual []
+    p.Settings.ImportTargets |> shouldEqual true
+    p.Settings.CopyLocal |> shouldEqual false
+    p.Settings.OmitContent |> shouldEqual true
+
+
+let configWithInvalidPrereleaseString = """
+    nuget Plossum.CommandLine !0.3.0.14   
+"""
+
+[<Test>]
+let ``should report error on invalid prerelease string``() = 
+    try
+        DependenciesFile.FromCode(configWithInvalidPrereleaseString) |> ignore
+        failwith "error"
+    with
+    | exn -> Assert.IsTrue(exn.Message.Contains("Invalid prerelease version !0.3.0.14")) |> ignore
+
+let html = """
+<!DOCTYPE html><html><head></head></html>"
+"""
+
+[<Test>]
+let ``should not read hhtml``() = 
+    try
+        DependenciesFile.FromCode(html) |> ignore
+        failwith "error"
+    with
+    | exn -> Assert.IsTrue(exn.Message.Contains"Unrecognized token")
